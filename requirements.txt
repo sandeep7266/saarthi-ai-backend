@@ -1,0 +1,39 @@
+# Core
+fastapi==0.111.0
+uvicorn[standard]==0.30.0
+python-dotenv==1.0.1
+
+# Firebase
+firebase-admin==6.5.0
+
+# Payments
+razorpay==1.4.1
+
+# Auth & Security
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.3
+passlib[bcrypt]==1.7.4
+
+# Validation
+pydantic[email]==2.7.1
+
+# AI
+google-generativeai==0.7.2
+
+# PDF generation
+reportlab==4.2.0
+
+# HTTP client
+httpx==0.27.0
+
+# Rate limiting  ← was missing
+slowapi==0.1.9
+
+# Scheduler (for auto-expire cron)  ← was missing
+apscheduler==3.10.4
+
+# Retry logic
+tenacity==8.2.3
+
+# Cloudinary (PDF invoice storage - free tier)
+cloudinary==1.40.0

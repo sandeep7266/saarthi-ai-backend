@@ -1,0 +1,37 @@
+# Secrets — NEVER in image
+.env
+serviceAccountKey.json
+*.pem
+*.key
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+
+# Dev tools
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Git
+.git/
+.gitignore
+
+# Docs
+*.md
+SETUP_GUIDE.md
+
+# Test files
+tests/
+test_*.py
+
+# Temp
+tmp/
+*.zip

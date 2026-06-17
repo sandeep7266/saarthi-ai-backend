@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+
+    // Block ALL direct client access by default
+    // All reads/writes go through the backend (Admin SDK bypasses rules)
+    // These rules protect against anyone accessing Firestore directly
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isServiceAccount() {
+      // Firebase Admin SDK always bypasses rules.
+      // These rules only apply to client SDK access.
+      return false;
+    }
+
+    // ── DENY everything by default ────────────────────────────────────────────
+    // Our backend uses Admin SDK which bypasses these rules entirely.
+    // These rules prevent direct client-side Firestore access (security layer).
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Exception: Allow Firebase Auth users to read ONLY their own user doc ──
+    // (Only needed if you add Flutter Firebase Auth later)
+    // match /users/{userId} {
+    //   allow read: if request.auth.uid == userId;
+    // }
+  }
+}

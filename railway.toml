@@ -1,0 +1,19 @@
+# railway.toml
+# Railway.app deployment configuration for Saarthi-AI backend
+
+[build]
+builder    = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand   = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2 --loop uvloop --http httptools --proxy-headers"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType  = "on_failure"
+restartPolicyMaxRetries = 3
+
+[[services]]
+name = "saarthi-ai-api"
+
+[services.env]
+PORT = "8000"
