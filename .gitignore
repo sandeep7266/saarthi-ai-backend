@@ -41,3 +41,7 @@ htmlcov/
 # Temp backups
 *.zip
 /tmp/
+
+*.txt
+token*.txt
+*token*
