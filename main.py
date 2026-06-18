@@ -101,6 +101,7 @@ ALLOWED_ORIGINS = os.getenv(
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = [o.strip() for o in ALLOWED_ORIGINS],
+    allow_origin_regex= r"https?://localhost:\d+",
     allow_credentials = True,
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers     = ["*"],
