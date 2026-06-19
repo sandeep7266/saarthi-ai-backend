@@ -1,18 +1,23 @@
 """
 routers/booking.py
-WhatsApp incoming webhook message parser + Gemini AI booking execution engine.
-Multi-tenant isolation, slot locking, Razorpay deposit link generation.
+WhatsApp incoming webhook — NEW FLOW:
+1. Customer message karta hai → Gemini greeting + intent detect karta hai
+2. Agar booking intent hai → naam (agar pehle se nahi hai) puchta hai
+3. Naam mil jaane par → Web Booking App link bhejta hai (session token ke saath)
+4. Customer web app pe service+staff+slot+payment complete karta hai
+5. Payment confirm hone par → booking ID + invoice WhatsApp pe wapas aata hai
+
+Yeh Gemini ko slot/service selection ki complexity se free karta hai —
+ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
 """
 
 import os
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-import razorpay
 from fastapi import APIRouter, HTTPException, Query, Request
 from google import generativeai as genai
 
@@ -26,13 +31,8 @@ WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "saarthi_verify_token
 META_ACCESS_TOKEN     = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION      = os.getenv("META_API_VERSION", "v19.0")
 GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY", "")
-RAZORPAY_KEY_ID       = os.getenv("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET   = os.getenv("RAZORPAY_KEY_SECRET", "")
 APP_BASE_URL          = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
 
-DEPOSIT_PERCENT = 0.25   # 25% deposit required to hold slot
-
-# Configure Gemini
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -41,9 +41,9 @@ if GEMINI_API_KEY:
 
 @router.get("/whatsapp")
 async def whatsapp_verify(
-    hub_mode       : str = Query(..., alias="hub.mode"),
+    hub_mode        : str = Query(..., alias="hub.mode"),
     hub_verify_token: str = Query(..., alias="hub.verify_token"),
-    hub_challenge  : str = Query(..., alias="hub.challenge"),
+    hub_challenge   : str = Query(..., alias="hub.challenge"),
 ):
     """Meta webhook verification handshake."""
     if hub_mode == "subscribe" and hub_verify_token == WHATSAPP_VERIFY_TOKEN:
@@ -58,36 +58,31 @@ async def whatsapp_verify(
 async def whatsapp_incoming(request: Request):
     """
     Ingestion gateway for Meta WhatsApp Cloud API messages.
-    Performs multi-tenant isolation → Gemini AI routing → booking execution.
+    NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
     """
     payload = await request.json()
 
     try:
         entry   = payload["entry"][0]
         changes = entry["changes"][0]["value"]
-
-        # Extract the incoming phone number ID to identify the tenant
         phone_number_id = changes.get("metadata", {}).get("phone_number_id", "")
 
         messages = changes.get("messages", [])
         if not messages:
-            # Delivery receipts / status updates — acknowledge silently
             return {"status": "ok"}
 
         msg         = messages[0]
-        from_number = msg.get("from", "")   # Customer's WhatsApp number
+        from_number = msg.get("from", "")
         msg_type    = msg.get("type", "")
         msg_body    = ""
 
         if msg_type == "text":
             msg_body = msg.get("text", {}).get("body", "").strip()
         elif msg_type == "interactive":
-            # Handle quick-reply buttons
             interactive = msg.get("interactive", {})
             if interactive.get("type") == "button_reply":
                 msg_body = interactive["button_reply"]["title"]
         else:
-            # Unsupported message type
             _send_whatsapp_text(phone_number_id, from_number,
                 "Sorry, main abhi sirf text messages samajh sakti hoon. 😊")
             return {"status": "ok"}
@@ -98,63 +93,69 @@ async def whatsapp_incoming(request: Request):
         logger.info("Incoming WhatsApp | phone_id=%s | from=%s | msg=%s",
                     phone_number_id, from_number, msg_body[:80])
 
-        # ── Multi-Tenant Isolation: resolve client by phone_number_id ──────────
+        # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
             logger.warning("No active tenant found for phone_number_id: %s", phone_number_id)
-            return {"status": "ok"}   # Unknown number, silently drop
-
-        if client_data.get("status") != "active":
-            # Bot is shut down for expired/inactive tenants
             return {"status": "ok"}
 
-        # ── Fetch business context for Gemini ─────────────────────────────────
-        services      = _fetch_services(client_id)
-        available_slots = _fetch_available_slots(client_id)
-        bot_profile   = client_data.get("gemini_bot_profile", {})
+        if client_data.get("status") != "active":
+            return {"status": "ok"}
 
-        # ── Build conversation history from Firestore ─────────────────────────
+        # ── Customer profile fetch karo (naam already pata hai ya nahi) ────
+        customer_profile = _get_or_create_customer_profile(client_id, from_number)
+
+        # ── Conversation history ────────────────────────────────────────────
         conversation_history = _get_conversation_history(client_id, from_number)
+        bot_profile = client_data.get("gemini_bot_profile", {})
 
-        # ── Call Gemini AI ────────────────────────────────────────────────────
+        # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
-            client_id=client_id,
-            customer_phone=from_number,
             user_message=msg_body,
-            services=services,
-            available_slots=available_slots,
             bot_profile=bot_profile,
             conversation_history=conversation_history,
+            customer_name=customer_profile.get("name", ""),
         )
 
-        # ── Parse AI intent and act ────────────────────────────────────────────
-        ai_text   = ai_response.get("reply_text", "")
-        intent    = ai_response.get("intent", "conversation")
-        slot_info = ai_response.get("slot_to_book")
-        service_info = ai_response.get("service_to_book")
+        ai_text = ai_response.get("reply_text", "")
+        intent  = ai_response.get("intent", "conversation")
 
-        if intent == "book_slot" and slot_info and service_info:
-            # Lock slot + create pending booking + generate deposit link
-            result = await _initiate_booking(
-                client_id=client_id,
-                client_data=client_data,
-                customer_phone=from_number,
-                slot_info=slot_info,
-                service_info=service_info,
-            )
-            if result.get("success"):
+        # ── Intent: booking chahiye ──────────────────────────────────────────
+        if intent == "want_booking":
+            if not customer_profile.get("name"):
+                # Naam nahi pata — pehle naam pucho
                 ai_text = (
                     f"{ai_text}\n\n"
-                    f"💳 *25% Advance Payment Link (Valid 15 min):*\n{result['payment_link']}\n\n"
-                    f"Payment ke baad aapki booking confirm ho jayegi! ✅"
+                    f"Booking ke liye, aapka naam bata dein? 😊"
+                )
+                _set_awaiting_name(client_id, from_number)
+            else:
+                # Naam pata hai — seedha booking link bhej do
+                ai_text = _generate_booking_link_message(
+                    client_id=client_id,
+                    customer_phone=from_number,
+                    customer_name=customer_profile["name"],
+                    business_name=client_data.get("business_name", ""),
+                )
+
+        # ── Intent: naam de raha hai (awaiting_name state mein) ────────────
+        elif _is_awaiting_name(client_id, from_number):
+            extracted_name = _extract_name_from_message(msg_body)
+            if extracted_name:
+                _save_customer_name(client_id, from_number, extracted_name)
+                _clear_awaiting_name(client_id, from_number)
+                ai_text = _generate_booking_link_message(
+                    client_id=client_id,
+                    customer_phone=from_number,
+                    customer_name=extracted_name,
+                    business_name=client_data.get("business_name", ""),
                 )
             else:
-                ai_text = ai_text or "Maafi chahti hoon, yeh slot abhi available nahi hai. Doosra time chuniye? 🙏"
+                ai_text = "Maafi chahti hoon, aapka naam samajh nahi paayi. Phir se bata dein? 🙏"
 
-        # ── Store conversation turn ────────────────────────────────────────────
+        # ── Store conversation turn ──────────────────────────────────────────
         _store_conversation_turn(client_id, from_number, msg_body, ai_text)
 
-        # ── Send reply via WhatsApp ────────────────────────────────────────────
         if ai_text:
             _send_whatsapp_text(phone_number_id, from_number, ai_text)
 
@@ -167,7 +168,6 @@ async def whatsapp_incoming(request: Request):
 # ── Tenant Resolution ──────────────────────────────────────────────────────────
 
 def _resolve_tenant(phone_number_id: str) -> tuple[Optional[dict], Optional[str]]:
-    """Find the active tenant document by Meta phone_number_id."""
     db = get_db()
     docs = (
         db.collection(Collections.CLIENTS)
@@ -181,40 +181,120 @@ def _resolve_tenant(phone_number_id: str) -> tuple[Optional[dict], Optional[str]
     return None, None
 
 
-# ── Business Data Fetchers ─────────────────────────────────────────────────────
+# ── Customer Profile Management ────────────────────────────────────────────────
 
-def _fetch_services(client_id: str) -> list[dict]:
+def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict:
+    """Customer ka naam aur preferences yaad rakhne ke liye."""
     db = get_db()
-    docs = (
+    ref = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
-        .collection(Collections.SERVICES)
-        .where("is_active", "==", True)
-        .get()
+        .collection("customers")
+        .document(customer_phone)
     )
-    return [{"id": d.id, **d.to_dict()} for d in docs]
+    doc = ref.get()
+    if doc.exists:
+        return doc.to_dict()
+
+    profile = {
+        "phone"        : customer_phone,
+        "name"         : "",
+        "awaiting_name": False,
+        "created_at"   : datetime.now(timezone.utc),
+    }
+    ref.set(profile)
+    return profile
 
 
-def _fetch_available_slots(client_id: str) -> list[dict]:
+def _set_awaiting_name(client_id: str, customer_phone: str) -> None:
     db = get_db()
-    now = datetime.now(timezone.utc)
-    docs = (
+    ref = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
-        .collection(Collections.SLOTS)
-        .where("status", "==", "available")
-        .where("slot_datetime", ">=", now)
-        .order_by("slot_datetime")
-        .limit(30)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"awaiting_name": True})
+
+
+def _is_awaiting_name(client_id: str, customer_phone: str) -> bool:
+    db = get_db()
+    doc = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
         .get()
     )
-    return [{"id": d.id, **d.to_dict()} for d in docs]
+    return doc.exists and doc.to_dict().get("awaiting_name", False)
+
+
+def _clear_awaiting_name(client_id: str, customer_phone: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"awaiting_name": False})
+
+
+def _save_customer_name(client_id: str, customer_phone: str, name: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"name": name, "updated_at": datetime.now(timezone.utc)})
+
+
+def _extract_name_from_message(msg: str) -> str:
+    """Simple heuristic: pehla 2-3 words jo letters hain, naam maan lo."""
+    cleaned = msg.strip()
+    # Common prefixes hata do
+    for prefix in ["mera naam", "my name is", "naam", "name is", "main"]:
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+    cleaned = cleaned.strip(".,!- ")
+    words = cleaned.split()[:3]
+    name = " ".join(words).title()
+    return name if len(name) >= 2 else ""
+
+
+# ── Booking Link Generator ──────────────────────────────────────────────────────
+
+def _generate_booking_link_message(
+    client_id: str,
+    customer_phone: str,
+    customer_name: str,
+    business_name: str,
+) -> str:
+    """
+    Booking session banao aur customer ko Web App link bhejo.
+    """
+    from routers.booking_session import create_booking_session
+
+    session = create_booking_session(
+        client_id=client_id,
+        customer_phone=customer_phone,
+        customer_name=customer_name,
+    )
+
+    return (
+        f"Dhanyavaad, {customer_name}! 😊\n\n"
+        f"Neeche diye link pe jaake apni booking complete karein:\n"
+        f"👉 {session['booking_url']}\n\n"
+        f"Yahan se aap service, staff aur time slot choose kar sakte hain "
+        f"aur payment bhi kar sakte hain. Link 30 minute tak valid hai. 🙏"
+    )
 
 
 # ── Conversation Memory ────────────────────────────────────────────────────────
 
 def _get_conversation_history(client_id: str, customer_phone: str) -> list[dict]:
-    """Retrieve last 10 conversation turns for context window."""
     db = get_db()
     docs = (
         db.collection(Collections.CLIENTS)
@@ -227,12 +307,11 @@ def _get_conversation_history(client_id: str, customer_phone: str) -> list[dict]
         .get()
     )
     turns = [d.to_dict() for d in docs]
-    turns.reverse()  # Chronological order
+    turns.reverse()
     return turns
 
 
 def _store_conversation_turn(client_id: str, customer_phone: str, user_msg: str, ai_reply: str):
-    """Persist a conversation turn for multi-turn context."""
     db = get_db()
     turns_ref = (
         db.collection(Collections.CLIENTS)
@@ -248,63 +327,46 @@ def _store_conversation_turn(client_id: str, customer_phone: str, user_msg: str,
     })
 
 
-# ── Gemini AI Engine ───────────────────────────────────────────────────────────
+# ── Gemini AI — Simplified (sirf conversation + intent) ───────────────────────
 
 async def _invoke_gemini(
-    client_id: str,
-    customer_phone: str,
     user_message: str,
-    services: list[dict],
-    available_slots: list[dict],
     bot_profile: dict,
     conversation_history: list[dict],
+    customer_name: str = "",
 ) -> dict:
     """
-    Builds context-rich prompt and invokes Gemini.
-    Returns structured dict: { reply_text, intent, slot_to_book, service_to_book }.
+    Gemini ab sirf 2 kaam karta hai:
+    1. Friendly Hinglish conversation
+    2. Detect karna ki customer booking karna chahta hai ya nahi
+
+    Asli booking (service/staff/slot/payment) ab Web App mein hoti hai.
     """
     persona_name  = bot_profile.get("persona_name", "Priya")
     business_type = bot_profile.get("business_type", "salon")
-    welcome_msg   = bot_profile.get("welcome_msg", "")
 
-    # Format services
-    services_text = "\n".join([
-        f"- {s.get('name')} | ₹{s.get('price')} | {s.get('duration_min', 30)} min"
-        for s in services
-    ]) or "Services list loading..."
-
-    # Format slots (limit to 10 for prompt efficiency)
-    slots_text = "\n".join([
-        f"- SlotID:{s['id']} | {_format_slot_datetime(s.get('slot_datetime'))} | Staff:{s.get('staff_name','Any')}"
-        for s in available_slots[:10]
-    ]) or "No slots available today."
-
-    # Format conversation history
     history_text = ""
     for turn in conversation_history[-6:]:
         history_text += f"Customer: {turn.get('user','')}\n{persona_name}: {turn.get('assistant','')}\n"
 
-    system_prompt = f"""You are {persona_name}, the AI WhatsApp receptionist for this {business_type} business.
-Communicate warmly in Hinglish (mix of Hindi and English). Keep replies SHORT and conversational (2-4 lines max).
-Never break character. You can understand English, Hindi, and Hinglish.
+    name_context = f"Customer ka naam {customer_name} hai." if customer_name else "Customer ka naam abhi pata nahi hai."
 
-SERVICES AVAILABLE:
-{services_text}
+    system_prompt = f"""You are {persona_name}, a warm AI receptionist for a {business_type} business.
+Communicate in Hinglish (Hindi-English mix). Keep replies SHORT (2-3 lines max).
+{name_context}
 
-AVAILABLE APPOINTMENT SLOTS:
-{slots_text}
-
-INSTRUCTIONS:
-1. Help customers discover services, check availability, and book appointments.
-2. When a customer wants to book, confirm: which service, which date/time, which staff (if preference).
-3. When you are confident about slot + service selection, output a JSON block (and only in that case):
-   BOOKING_JSON:{{\"intent\":\"book_slot\",\"slot_id\":\"<exact SlotID from list>\",\"service_name\":\"<service name>\",\"service_price\":<price as integer>,\"staff_name\":\"<staff name>\"}}
-4. For general questions, inquiry, or greetings: output only conversational text.
-5. If a requested slot is NOT in the available list, politely say it's taken and suggest alternatives.
-6. Never make up slots or services not listed above.
+YOUR ONLY JOB:
+1. Greet warmly and chat naturally about services/timing in general terms.
+2. Detect if the customer wants to BOOK an appointment (any sign of booking intent:
+   mentions a service, asks about availability, says "book karna hai", etc.)
+3. When booking intent is detected, output EXACTLY this marker at the end:
+   INTENT:want_booking
+4. For general chat (greetings, questions about hours, etc.) do NOT output the marker.
 
 CONVERSATION HISTORY:
-{history_text}"""
+{history_text}
+
+Never invent prices or specific slot times — those are handled separately."""
 
     try:
         model = genai.GenerativeModel(
@@ -314,8 +376,8 @@ CONVERSATION HISTORY:
         response = model.generate_content(
             user_message,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.4,
-                max_output_tokens=512,
+                temperature=0.5,
+                max_output_tokens=200,
             ),
         )
         raw_text = response.text.strip()
@@ -326,54 +388,17 @@ CONVERSATION HISTORY:
             "intent"    : "error",
         }
 
-    # Parse booking intent if Gemini signaled it
-    if "BOOKING_JSON:" in raw_text:
-        parts      = raw_text.split("BOOKING_JSON:", 1)
-        reply_text = parts[0].strip()
-        json_str   = parts[1].strip()
+    intent = "conversation"
+    reply_text = raw_text
 
-        # Clean up any trailing text after the JSON
-        brace_end = json_str.rfind("}") + 1
-        json_str  = json_str[:brace_end]
+    if "INTENT:want_booking" in raw_text:
+        intent     = "want_booking"
+        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
 
-        try:
-            booking_data = json.loads(json_str)
-            slot_id = booking_data.get("slot_id", "")
-
-            # Validate slot_id exists in our available list
-            valid_slot_ids = {s["id"] for s in available_slots}
-            if slot_id not in valid_slot_ids:
-                logger.warning("Gemini returned invalid slot_id: %s", slot_id)
-                return {"reply_text": reply_text or "Woh slot available nahi hai. Koi aur time chuniye?", "intent": "conversation"}
-
-            slot_obj = next(s for s in available_slots if s["id"] == slot_id)
-
-            return {
-                "reply_text"     : reply_text,
-                "intent"         : "book_slot",
-                "slot_to_book"   : slot_obj,
-                "service_to_book": {
-                    "name" : booking_data.get("service_name", ""),
-                    "price": booking_data.get("service_price", 0),
-                    "staff": booking_data.get("staff_name", ""),
-                },
-            }
-        except (json.JSONDecodeError, StopIteration) as e:
-            logger.error("Failed to parse Gemini BOOKING_JSON: %s | raw=%s", e, json_str)
-            return {"reply_text": raw_text, "intent": "conversation"}
-
-    return {"reply_text": raw_text, "intent": "conversation"}
+    return {"reply_text": reply_text, "intent": intent}
 
 
-def _format_slot_datetime(slot_dt) -> str:
-    if slot_dt is None:
-        return "TBD"
-    if hasattr(slot_dt, "strftime"):
-        return slot_dt.strftime("%d %b %Y %I:%M %p")
-    return str(slot_dt)
-
-
-# ── Booking Initiation ─────────────────────────────────────────────────────────
+# ── Booking Initiation (reused by booking_session.py) ─────────────────────────
 
 async def _initiate_booking(
     client_id: str,
@@ -384,21 +409,24 @@ async def _initiate_booking(
 ) -> dict:
     """
     Lock slot as pending_payment, create booking doc, generate Razorpay deposit link.
+    Called from booking_session.py after customer selects via Web App.
     """
+    import razorpay
+
+    RAZORPAY_KEY_ID     = os.getenv("RAZORPAY_KEY_ID", "")
+    RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+    DEPOSIT_PERCENT      = 0.25
+
     db = get_db()
     booking_id = str(uuid.uuid4())[:8].upper()
     now        = datetime.now(timezone.utc)
 
-    service_price   = int(service_info.get("price", 0))
-    deposit_amount  = int(service_price * DEPOSIT_PERCENT)   # 25%
-    deposit_paise   = deposit_amount * 100                    # Razorpay uses paise
-
-    if deposit_paise < 100:   # Minimum ₹1
-        deposit_paise = 100
+    service_price  = int(service_info.get("price", 0))
+    deposit_amount = int(service_price * DEPOSIT_PERCENT)
+    deposit_paise  = max(deposit_amount * 100, 100)
 
     slot_id = slot_info["id"]
 
-    # ── Atomic slot lock (prevent race conditions) ─────────────────────────────
     slot_ref = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
@@ -422,20 +450,19 @@ async def _initiate_booking(
         logger.error("Slot lock transaction failed: %s", e)
         return {"success": False, "reason": "transaction_error"}
 
-    # ── Create pending booking document ────────────────────────────────────────
     booking_doc = {
-        "booking_id"      : booking_id,
-        "client_id"       : client_id,
-        "customer_phone"  : customer_phone,
-        "slot_id"         : slot_id,
-        "slot_datetime"   : slot_info.get("slot_datetime"),
-        "staff_name"      : service_info.get("staff") or slot_info.get("staff_name", ""),
-        "service_name"    : service_info.get("name", ""),
-        "service_price"   : service_price,
-        "deposit_amount"  : deposit_amount,
-        "status"          : "pending_payment",
-        "created_at"      : now,
-        "updated_at"      : now,
+        "booking_id"    : booking_id,
+        "client_id"     : client_id,
+        "customer_phone": customer_phone,
+        "slot_id"       : slot_id,
+        "slot_datetime" : slot_info.get("slot_datetime"),
+        "staff_name"    : service_info.get("staff") or slot_info.get("staff_name", ""),
+        "service_name"  : service_info.get("name", ""),
+        "service_price" : service_price,
+        "deposit_amount": deposit_amount,
+        "status"        : "pending_payment",
+        "created_at"    : now,
+        "updated_at"    : now,
     }
 
     booking_ref = (
@@ -446,34 +473,35 @@ async def _initiate_booking(
     )
     booking_ref.set(booking_doc)
 
-    # ── Razorpay Deposit Link ──────────────────────────────────────────────────
-    if not RAZORPAY_KEY_ID:
-        return {"success": False, "reason": "razorpay_not_configured"}
+    if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
+        # Test mode — dummy link
+        slot_ref.update({"status": "pending_payment"})
+        return {
+            "success"     : True,
+            "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
+            "booking_id"  : booking_id,
+        }
 
     rz_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
     business_name = client_data.get("business_name", "")
 
     try:
         plink = rz_client.payment_link.create({
-            "amount"      : deposit_paise,
-            "currency"    : "INR",
+            "amount"        : deposit_paise,
+            "currency"      : "INR",
             "accept_partial": False,
-            "description" : f"25% Advance — {service_info['name']} @ {business_name}",
-            "customer"    : {"contact": customer_phone},
-            "notify"      : {"sms": False, "email": False, "whatsapp": False},
+            "description"   : f"25% Advance — {service_info['name']} @ {business_name}",
+            "customer"      : {"contact": customer_phone},
+            "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"   : int((now.timestamp()) + 900),   # 15 minutes
-            "notes"       : {
-                "booking_id": booking_id,
-                "client_id" : client_id,
-            },
-            "callback_url"   : f"{APP_BASE_URL}/booking/success",
+            "expire_by"     : int(now.timestamp() + 900),
+            "notes"         : {"booking_id": booking_id, "client_id": client_id},
+            "callback_url"  : f"{APP_BASE_URL}/booking/success",
             "callback_method": "get",
         })
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        # Release slot lock on failure
         slot_ref.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
@@ -487,7 +515,534 @@ def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
         "messaging_product": "whatsapp",
         "to"  : to,
         "type": "text",
-        "text": {"body": message, "preview_url": False},
+        "text": {"body": message, "preview_url": True},
+    }
+    headers = {
+        "Authorization": f"Bearer {META_ACCESS_TOKEN}",
+        "Content-Type" : "application/json",
+    }
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("WhatsApp send failed → %s: %s", to, e)"""
+routers/booking.py
+WhatsApp incoming webhook — NEW FLOW:
+1. Customer message karta hai → Gemini greeting + intent detect karta hai
+2. Agar booking intent hai → naam (agar pehle se nahi hai) puchta hai
+3. Naam mil jaane par → Web Booking App link bhejta hai (session token ke saath)
+4. Customer web app pe service+staff+slot+payment complete karta hai
+5. Payment confirm hone par → booking ID + invoice WhatsApp pe wapas aata hai
+
+Yeh Gemini ko slot/service selection ki complexity se free karta hai —
+ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
+"""
+
+import os
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+import httpx
+from fastapi import APIRouter, HTTPException, Query, Request
+from google import generativeai as genai
+
+from database import get_db, Collections
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1/webhook", tags=["WhatsApp Booking"])
+
+# ── Environment Config ─────────────────────────────────────────────────────────
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "saarthi_verify_token")
+META_ACCESS_TOKEN     = os.getenv("META_ACCESS_TOKEN", "")
+META_API_VERSION      = os.getenv("META_API_VERSION", "v19.0")
+GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY", "")
+APP_BASE_URL          = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+
+# ── Meta Webhook Verification (GET) ───────────────────────────────────────────
+
+@router.get("/whatsapp")
+async def whatsapp_verify(
+    hub_mode        : str = Query(..., alias="hub.mode"),
+    hub_verify_token: str = Query(..., alias="hub.verify_token"),
+    hub_challenge   : str = Query(..., alias="hub.challenge"),
+):
+    """Meta webhook verification handshake."""
+    if hub_mode == "subscribe" and hub_verify_token == WHATSAPP_VERIFY_TOKEN:
+        logger.info("WhatsApp webhook verified successfully.")
+        return int(hub_challenge)
+    raise HTTPException(status_code=403, detail="Verification token mismatch.")
+
+
+# ── Main Incoming Message Handler (POST) ──────────────────────────────────────
+
+@router.post("/whatsapp")
+async def whatsapp_incoming(request: Request):
+    """
+    Ingestion gateway for Meta WhatsApp Cloud API messages.
+    NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
+    """
+    payload = await request.json()
+
+    try:
+        entry   = payload["entry"][0]
+        changes = entry["changes"][0]["value"]
+        phone_number_id = changes.get("metadata", {}).get("phone_number_id", "")
+
+        messages = changes.get("messages", [])
+        if not messages:
+            return {"status": "ok"}
+
+        msg         = messages[0]
+        from_number = msg.get("from", "")
+        msg_type    = msg.get("type", "")
+        msg_body    = ""
+
+        if msg_type == "text":
+            msg_body = msg.get("text", {}).get("body", "").strip()
+        elif msg_type == "interactive":
+            interactive = msg.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                msg_body = interactive["button_reply"]["title"]
+        else:
+            _send_whatsapp_text(phone_number_id, from_number,
+                "Sorry, main abhi sirf text messages samajh sakti hoon. 😊")
+            return {"status": "ok"}
+
+        if not msg_body:
+            return {"status": "ok"}
+
+        logger.info("Incoming WhatsApp | phone_id=%s | from=%s | msg=%s",
+                    phone_number_id, from_number, msg_body[:80])
+
+        # ── Multi-Tenant Isolation ──────────────────────────────────────────
+        client_data, client_id = _resolve_tenant(phone_number_id)
+        if not client_data:
+            logger.warning("No active tenant found for phone_number_id: %s", phone_number_id)
+            return {"status": "ok"}
+
+        if client_data.get("status") != "active":
+            return {"status": "ok"}
+
+        # ── Customer profile fetch karo (naam already pata hai ya nahi) ────
+        customer_profile = _get_or_create_customer_profile(client_id, from_number)
+
+        # ── Conversation history ────────────────────────────────────────────
+        conversation_history = _get_conversation_history(client_id, from_number)
+        bot_profile = client_data.get("gemini_bot_profile", {})
+
+        # ── Gemini se sirf conversational reply + intent lo ────────────────
+        ai_response = await _invoke_gemini(
+            user_message=msg_body,
+            bot_profile=bot_profile,
+            conversation_history=conversation_history,
+            customer_name=customer_profile.get("name", ""),
+        )
+
+        ai_text = ai_response.get("reply_text", "")
+        intent  = ai_response.get("intent", "conversation")
+
+        # ── Intent: booking chahiye ──────────────────────────────────────────
+        if intent == "want_booking":
+            if not customer_profile.get("name"):
+                # Naam nahi pata — pehle naam pucho
+                ai_text = (
+                    f"{ai_text}\n\n"
+                    f"Booking ke liye, aapka naam bata dein? 😊"
+                )
+                _set_awaiting_name(client_id, from_number)
+            else:
+                # Naam pata hai — seedha booking link bhej do
+                ai_text = _generate_booking_link_message(
+                    client_id=client_id,
+                    customer_phone=from_number,
+                    customer_name=customer_profile["name"],
+                    business_name=client_data.get("business_name", ""),
+                )
+
+        # ── Intent: naam de raha hai (awaiting_name state mein) ────────────
+        elif _is_awaiting_name(client_id, from_number):
+            extracted_name = _extract_name_from_message(msg_body)
+            if extracted_name:
+                _save_customer_name(client_id, from_number, extracted_name)
+                _clear_awaiting_name(client_id, from_number)
+                ai_text = _generate_booking_link_message(
+                    client_id=client_id,
+                    customer_phone=from_number,
+                    customer_name=extracted_name,
+                    business_name=client_data.get("business_name", ""),
+                )
+            else:
+                ai_text = "Maafi chahti hoon, aapka naam samajh nahi paayi. Phir se bata dein? 🙏"
+
+        # ── Store conversation turn ──────────────────────────────────────────
+        _store_conversation_turn(client_id, from_number, msg_body, ai_text)
+
+        if ai_text:
+            _send_whatsapp_text(phone_number_id, from_number, ai_text)
+
+    except (KeyError, IndexError) as e:
+        logger.debug("Webhook payload parse skip (likely non-message event): %s", e)
+
+    return {"status": "ok"}
+
+
+# ── Tenant Resolution ──────────────────────────────────────────────────────────
+
+def _resolve_tenant(phone_number_id: str) -> tuple[Optional[dict], Optional[str]]:
+    db = get_db()
+    docs = (
+        db.collection(Collections.CLIENTS)
+        .where("whatsapp_phone_id", "==", phone_number_id)
+        .where("status", "==", "active")
+        .limit(1)
+        .get()
+    )
+    if docs:
+        return docs[0].to_dict(), docs[0].id
+    return None, None
+
+
+# ── Customer Profile Management ────────────────────────────────────────────────
+
+def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict:
+    """Customer ka naam aur preferences yaad rakhne ke liye."""
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    doc = ref.get()
+    if doc.exists:
+        return doc.to_dict()
+
+    profile = {
+        "phone"        : customer_phone,
+        "name"         : "",
+        "awaiting_name": False,
+        "created_at"   : datetime.now(timezone.utc),
+    }
+    ref.set(profile)
+    return profile
+
+
+def _set_awaiting_name(client_id: str, customer_phone: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"awaiting_name": True})
+
+
+def _is_awaiting_name(client_id: str, customer_phone: str) -> bool:
+    db = get_db()
+    doc = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+        .get()
+    )
+    return doc.exists and doc.to_dict().get("awaiting_name", False)
+
+
+def _clear_awaiting_name(client_id: str, customer_phone: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"awaiting_name": False})
+
+
+def _save_customer_name(client_id: str, customer_phone: str, name: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"name": name, "updated_at": datetime.now(timezone.utc)})
+
+
+def _extract_name_from_message(msg: str) -> str:
+    """Simple heuristic: pehla 2-3 words jo letters hain, naam maan lo."""
+    cleaned = msg.strip()
+    # Common prefixes hata do
+    for prefix in ["mera naam", "my name is", "naam", "name is", "main"]:
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+    cleaned = cleaned.strip(".,!- ")
+    words = cleaned.split()[:3]
+    name = " ".join(words).title()
+    return name if len(name) >= 2 else ""
+
+
+# ── Booking Link Generator ──────────────────────────────────────────────────────
+
+def _generate_booking_link_message(
+    client_id: str,
+    customer_phone: str,
+    customer_name: str,
+    business_name: str,
+) -> str:
+    """
+    Booking session banao aur customer ko Web App link bhejo.
+    """
+    from routers.booking_session import create_booking_session
+
+    session = create_booking_session(
+        client_id=client_id,
+        customer_phone=customer_phone,
+        customer_name=customer_name,
+    )
+
+    return (
+        f"Dhanyavaad, {customer_name}! 😊\n\n"
+        f"Neeche diye link pe jaake apni booking complete karein:\n"
+        f"👉 {session['booking_url']}\n\n"
+        f"Yahan se aap service, staff aur time slot choose kar sakte hain "
+        f"aur payment bhi kar sakte hain. Link 30 minute tak valid hai. 🙏"
+    )
+
+
+# ── Conversation Memory ────────────────────────────────────────────────────────
+
+def _get_conversation_history(client_id: str, customer_phone: str) -> list[dict]:
+    db = get_db()
+    docs = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("conversations")
+        .document(customer_phone)
+        .collection("turns")
+        .order_by("timestamp", direction="DESCENDING")
+        .limit(10)
+        .get()
+    )
+    turns = [d.to_dict() for d in docs]
+    turns.reverse()
+    return turns
+
+
+def _store_conversation_turn(client_id: str, customer_phone: str, user_msg: str, ai_reply: str):
+    db = get_db()
+    turns_ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("conversations")
+        .document(customer_phone)
+        .collection("turns")
+    )
+    turns_ref.add({
+        "user"     : user_msg,
+        "assistant": ai_reply,
+        "timestamp": datetime.now(timezone.utc),
+    })
+
+
+# ── Gemini AI — Simplified (sirf conversation + intent) ───────────────────────
+
+async def _invoke_gemini(
+    user_message: str,
+    bot_profile: dict,
+    conversation_history: list[dict],
+    customer_name: str = "",
+) -> dict:
+    """
+    Gemini ab sirf 2 kaam karta hai:
+    1. Friendly Hinglish conversation
+    2. Detect karna ki customer booking karna chahta hai ya nahi
+
+    Asli booking (service/staff/slot/payment) ab Web App mein hoti hai.
+    """
+    persona_name  = bot_profile.get("persona_name", "Priya")
+    business_type = bot_profile.get("business_type", "salon")
+
+    history_text = ""
+    for turn in conversation_history[-6:]:
+        history_text += f"Customer: {turn.get('user','')}\n{persona_name}: {turn.get('assistant','')}\n"
+
+    name_context = f"Customer ka naam {customer_name} hai." if customer_name else "Customer ka naam abhi pata nahi hai."
+
+    system_prompt = f"""You are {persona_name}, a warm AI receptionist for a {business_type} business.
+Communicate in Hinglish (Hindi-English mix). Keep replies SHORT (2-3 lines max).
+{name_context}
+
+YOUR ONLY JOB:
+1. Greet warmly and chat naturally about services/timing in general terms.
+2. Detect if the customer wants to BOOK an appointment (any sign of booking intent:
+   mentions a service, asks about availability, says "book karna hai", etc.)
+3. When booking intent is detected, output EXACTLY this marker at the end:
+   INTENT:want_booking
+4. For general chat (greetings, questions about hours, etc.) do NOT output the marker.
+
+CONVERSATION HISTORY:
+{history_text}
+
+Never invent prices or specific slot times — those are handled separately."""
+
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=system_prompt,
+        )
+        response = model.generate_content(
+            user_message,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.5,
+                max_output_tokens=200,
+            ),
+        )
+        raw_text = response.text.strip()
+    except Exception as e:
+        logger.error("Gemini API error: %s", e)
+        return {
+            "reply_text": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
+            "intent"    : "error",
+        }
+
+    intent = "conversation"
+    reply_text = raw_text
+
+    if "INTENT:want_booking" in raw_text:
+        intent     = "want_booking"
+        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
+
+    return {"reply_text": reply_text, "intent": intent}
+
+
+# ── Booking Initiation (reused by booking_session.py) ─────────────────────────
+
+async def _initiate_booking(
+    client_id: str,
+    client_data: dict,
+    customer_phone: str,
+    slot_info: dict,
+    service_info: dict,
+) -> dict:
+    """
+    Lock slot as pending_payment, create booking doc, generate Razorpay deposit link.
+    Called from booking_session.py after customer selects via Web App.
+    """
+    import razorpay
+
+    RAZORPAY_KEY_ID     = os.getenv("RAZORPAY_KEY_ID", "")
+    RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+    DEPOSIT_PERCENT      = 0.25
+
+    db = get_db()
+    booking_id = str(uuid.uuid4())[:8].upper()
+    now        = datetime.now(timezone.utc)
+
+    service_price  = int(service_info.get("price", 0))
+    deposit_amount = int(service_price * DEPOSIT_PERCENT)
+    deposit_paise  = max(deposit_amount * 100, 100)
+
+    slot_id = slot_info["id"]
+    slot_ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection(Collections.SLOTS)
+        .document(slot_id)
+    )
+
+    @db.transactional
+    def lock_slot_txn(transaction):
+        slot_doc = slot_ref.get(transaction=transaction)
+        if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
+            raise ValueError("Slot no longer available")
+        transaction.update(slot_ref, {"status": "pending_payment", "locked_at": now})
+
+    try:
+        transaction = db.transaction()
+        lock_slot_txn(transaction)
+    except ValueError:
+        return {"success": False, "reason": "slot_taken"}
+    except Exception as e:
+        logger.error("Slot lock transaction failed: %s", e)
+        return {"success": False, "reason": "transaction_error"}
+
+    booking_doc = {
+        "booking_id"    : booking_id,
+        "client_id"     : client_id,
+        "customer_phone": customer_phone,
+        "slot_id"       : slot_id,
+        "slot_datetime" : slot_info.get("slot_datetime"),
+        "staff_name"    : service_info.get("staff") or slot_info.get("staff_name", ""),
+        "service_name"  : service_info.get("name", ""),
+        "service_price" : service_price,
+        "deposit_amount": deposit_amount,
+        "status"        : "pending_payment",
+        "created_at"    : now,
+        "updated_at"    : now,
+    }
+
+    booking_ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection(Collections.BOOKINGS)
+        .document(booking_id)
+    )
+    booking_ref.set(booking_doc)
+
+    if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
+        # Test mode — dummy link
+        slot_ref.update({"status": "pending_payment"})
+        return {
+            "success"     : True,
+            "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
+            "booking_id"  : booking_id,
+        }
+
+    rz_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+    business_name = client_data.get("business_name", "")
+
+    try:
+        plink = rz_client.payment_link.create({
+            "amount"        : deposit_paise,
+            "currency"      : "INR",
+            "accept_partial": False,
+            "description"   : f"25% Advance — {service_info['name']} @ {business_name}",
+            "customer"      : {"contact": customer_phone},
+            "notify"        : {"sms": False, "email": False, "whatsapp": False},
+            "reminder_enable": False,
+            "expire_by"     : int(now.timestamp() + 900),
+            "notes"         : {"booking_id": booking_id, "client_id": client_id},
+            "callback_url"  : f"{APP_BASE_URL}/booking/success",
+            "callback_method": "get",
+        })
+        return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
+    except Exception as e:
+        logger.error("Razorpay deposit link creation failed: %s", e)
+        slot_ref.update({"status": "available", "locked_at": None})
+        booking_ref.delete()
+        return {"success": False, "reason": f"razorpay_error: {e}"}
+
+
+# ── WhatsApp Sender ────────────────────────────────────────────────────────────
+
+def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to"  : to,
+        "type": "text",
+        "text": {"body": message, "preview_url": True},
     }
     headers = {
         "Authorization": f"Bearer {META_ACCESS_TOKEN}",
@@ -499,3 +1054,4 @@ def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
             resp.raise_for_status()
     except Exception as e:
         logger.error("WhatsApp send failed → %s: %s", to, e)
+    

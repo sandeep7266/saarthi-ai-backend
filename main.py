@@ -31,6 +31,7 @@ from database import initialize_firebase, get_db, Collections
 from routers import auth, onboard, booking, payments, cron_jobs
 from routers.bookings_api import router as bookings_router
 from routers.notifications import router as notifications_router
+from routers.booking_session import router as booking_session_router
 from utils.rate_limiter import limiter
 from utils.booking_expiry import expire_stale_pending_bookings
 
@@ -101,7 +102,7 @@ ALLOWED_ORIGINS = os.getenv(
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = [o.strip() for o in ALLOWED_ORIGINS],
-    allow_origin_regex= r"https?://localhost:\d+",
+    allow_origin_regex=r"https?://localhost+:\d+",
     allow_credentials = True,
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers     = ["*"],
@@ -189,6 +190,7 @@ app.include_router(payments.router)
 app.include_router(cron_jobs.router)
 app.include_router(bookings_router)
 app.include_router(notifications_router)
+app.include_router(booking_session_router)
 
 # ── Health endpoints ───────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
@@ -219,4 +221,4 @@ async def health_check():
         "firebase" : "connected" if firebase_ok  else "error",
         "scheduler": "running"   if scheduler_ok else "stopped",
         "version"  : "1.1.0",
-    }
+        }

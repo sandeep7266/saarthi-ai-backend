@@ -287,6 +287,13 @@ async def _handle_b2c_booking_payment(entity: dict) -> None:
 
     logger.info("Booking CONFIRMED: %s | client=%s", booking_id, client_id)
 
+    # Mark booking session completed (agar Web App se aaya tha)
+    try:
+        from routers.booking_session import mark_session_completed
+        mark_session_completed(booking_id)
+    except Exception as e:
+        logger.debug("Session mark-complete skip: %s", e)
+
     # Generate PDF invoice
     client_doc = db.collection(Collections.CLIENTS).document(client_id).get().to_dict()
     invoice_url = generate_booking_invoice(
