@@ -1,5 +1,6 @@
 {
-  "indexes": [
+  "indexes": [],
+  "fieldOverrides": [
     {
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
@@ -146,6 +147,5 @@
         }
       ]
     }
-  ],
-  "fieldOverrides": []
+  ]
 }
