@@ -48,7 +48,7 @@ def expire_stale_pending_bookings() -> dict:
                 .document(client_id)
                 .collection(Collections.BOOKINGS)
                 .where("status", "==", "pending_payment")
-                 query = db.collection("bookings").where(filter=FieldFilter("created_at", "<=", cutoff))
+                .where("created_at", "<=", cutoff)
                 .get()
             )
 
