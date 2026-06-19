@@ -6,6 +6,7 @@ Runs every 5 minutes via APScheduler.
 """
 
 import logging
+from google.cloud.firestore import FieldFilter
 from datetime import datetime, timedelta, timezone
 
 from database import get_db, Collections
@@ -47,7 +48,7 @@ def expire_stale_pending_bookings() -> dict:
                 .document(client_id)
                 .collection(Collections.BOOKINGS)
                 .where("status", "==", "pending_payment")
-                .where("created_at", "<=", cutoff)
+                query = db.collection("bookings").where(filter=FieldFilter("created_at", "<=", cutoff))
                 .get()
             )
 
