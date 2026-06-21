@@ -20,7 +20,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -102,7 +102,6 @@ ALLOWED_ORIGINS = os.getenv(
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = [o.strip() for o in ALLOWED_ORIGINS],
-    allow_origin_regex=r"https?://localhost+:\d+",
     allow_credentials = True,
     allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers     = ["*"],
@@ -189,6 +188,16 @@ app.include_router(booking.router)
 app.include_router(payments.router)
 app.include_router(cron_jobs.router)
 app.include_router(bookings_router)
+
+
+# ── Customer Web Booking App (serves static HTML) ──────────────────────────────
+@app.get("/book", tags=["Booking Web App"])
+async def serve_booking_app():
+    """
+    Customer-facing booking page. WhatsApp bot sends links like:
+    https://YOUR_DOMAIN/book?session=xxxxx
+    """
+    return FileResponse("static/book.html", media_type="text/html")
 app.include_router(notifications_router)
 app.include_router(booking_session_router)
 
@@ -221,4 +230,4 @@ async def health_check():
         "firebase" : "connected" if firebase_ok  else "error",
         "scheduler": "running"   if scheduler_ok else "stopped",
         "version"  : "1.1.0",
-        }
+    }

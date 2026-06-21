@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="theme-color" content="#7C3AED" />
+<title>Book Your Appointment — Saarthi-AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #FAF8FF;
+    --surface:   #FFFFFF;
+    --border:    #E8E2F5;
+    --ink:       #1A1525;
+    --ink-soft:  #6B6478;
+    --purple:    #7C3AED;
+    --purple-dk: #5B21B6;
+    --purple-bg: #F5F0FF;
+    --crimson:   #DC2626;
+    --green:     #16A34A;
+    --green-bg:  #ECFDF5;
+    --shadow:    0 4px 20px rgba(124,58,237,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+    overscroll-behavior-y: none;
+  }
+  .display { font-family: 'Space Grotesk', sans-serif; }
+  button { font-family: inherit; }
+  #app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg); position: relative; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--border);
+    border-top-color: var(--purple); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  .spinner-sm {
+    width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  .screen-center {
+    display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px;
+  }
+  .header { padding: 24px 20px 4px; }
+  .header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .logo-badge {
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    background: linear-gradient(135deg, #7C3AED, #DC2626);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 16px;
+  }
+  .header-name { font-size: 17px; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-sub { font-size: 12px; color: var(--ink-soft); }
+
+  .progress { display: flex; align-items: center; gap: 6px; padding: 14px 20px 0; }
+  .progress-item { display: flex; align-items: center; gap: 6px; }
+  .progress-dot {
+    width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; font-weight: 700; color: var(--ink-soft);
+    background: var(--border); transition: background 0.3s, color 0.3s; flex-shrink: 0;
+  }
+  .progress-dot.active { background: var(--purple); color: #fff; }
+  .progress-dot.done { background: var(--green); color: #fff; }
+  .progress-label { font-size: 11.5px; font-weight: 500; color: var(--ink-soft); white-space: nowrap; }
+  .progress-label.active { font-weight: 700; color: var(--ink); }
+  .progress-line { flex: 1; height: 1px; background: var(--border); margin: 0 2px; }
+
+  .section-title { font-size: 19px; font-weight: 700; margin-bottom: 4px; }
+  .section-sub { font-size: 13px; color: var(--ink-soft); margin-bottom: 18px; }
+  .cat-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+    color: var(--ink-soft); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .cat-bar { width: 3px; height: 12px; background: var(--purple); border-radius: 2px; }
+  .service-card {
+    width: 100%; text-align: left; cursor: pointer; display: flex; align-items: center;
+    gap: 14px; padding: 14px 16px; margin-bottom: 10px; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--surface); transition: all 0.18s;
+  }
+  .service-card:active { transform: scale(0.99); }
+  .service-name { font-weight: 600; font-size: 15px; color: var(--ink); margin-bottom: 3px; }
+  .service-meta { display: flex; gap: 12px; font-size: 12px; color: var(--ink-soft); align-items: center; }
+  .service-meta-item { display: flex; align-items: center; gap: 3px; }
+  .service-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .service-price { font-weight: 700; font-size: 16px; color: var(--ink); flex-shrink: 0; }
+
+  .day-tabs { display: flex; gap: 8px; padding: 0 20px 16px; overflow-x: auto; scrollbar-width: none; }
+  .day-tab {
+    flex-shrink: 0; padding: 8px 16px; border-radius: 100px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600;
+    white-space: nowrap; cursor: pointer;
+  }
+  .day-tab.active { border: none; background: var(--purple); color: #fff; }
+  .slot-grid { padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .slot-btn {
+    padding: 12px 6px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); text-align: center; cursor: pointer;
+  }
+  .slot-btn:active { transform: scale(0.97); }
+  .slot-time { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+  .slot-staff {
+    font-size: 10.5px; color: var(--ink-soft); margin-top: 2px;
+    display: flex; align-items: center; justify-content: center; gap: 2px;
+  }
+  .back-link {
+    background: none; border: none; font-size: 13px; font-weight: 600;
+    color: var(--ink-soft); display: flex; align-items: center; gap: 4px; cursor: pointer;
+    padding: 16px 20px 0;
+  }
+
+  .ticket {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden; box-shadow: var(--shadow);
+  }
+  .ticket-top { padding: 18px 18px 14px; }
+  .ticket-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .ticket-service-name { font-weight: 700; font-size: 16px; }
+  .ticket-duration { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .ticket-price { font-weight: 700; font-size: 18px; }
+  .ticket-detail-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); margin-bottom: 8px; }
+  .ticket-divider { position: relative; height: 1px; background: var(--border); margin: 0 18px; }
+  .ticket-notch { position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); }
+  .ticket-bottom { padding: 14px 18px 18px; background: #FBF9FF; }
+  .ticket-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+  .ticket-row:last-child { margin-bottom: 0; }
+  .ticket-row .amt { font-weight: 700; color: var(--purple-dk); }
+  .ticket-row .amt-muted { font-weight: 600; color: var(--ink); }
+
+  .error-box {
+    margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+    background: #FEF2F2; border: 1px solid #FECACA; color: var(--crimson); font-size: 13px;
+  }
+  .fine-print { margin-top: 18px; font-size: 11.5px; color: var(--ink-soft); text-align: center; line-height: 1.5; }
+
+  .action-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.04);
+  }
+  .btn-primary {
+    width: 100%; padding: 14px; border-radius: 12px; border: none;
+    background: var(--purple); color: #fff; font-size: 15px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 0.2s;
+  }
+  .btn-primary:disabled { background: var(--border); color: var(--ink-soft); cursor: default; }
+  .btn-primary:active:not(:disabled) { background: var(--purple-dk); }
+
+  .success-wrap { padding: 60px 24px; text-align: center; }
+  .success-icon {
+    width: 72px; height: 72px; border-radius: 50%; background: var(--green-bg);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;
+  }
+  .success-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .success-sub { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 24px; line-height: 1.6; }
+  .booking-id-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 18px; display: inline-block;
+  }
+  .booking-id-label { font-size: 11px; color: var(--ink-soft); letter-spacing: 0.5px; text-transform: uppercase; }
+  .booking-id-value { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  .success-footnote { margin-top: 24px; font-size: 12.5px; color: var(--ink-soft); }
+
+  .empty-state { padding: 40px 20px; text-align: center; }
+  .empty-text { font-size: 13px; color: var(--ink-soft); margin-bottom: 16px; }
+  .btn-ghost {
+    background: none; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 20px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
+  }
+
+  .fatal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+  .fatal-msg { font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; text-align: center; }
+</style>
+</head>
+<body>
+<div id="app"><div class="screen-center"><div class="spinner"></div></div></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : 'https://saarthi-ai-backend-production.up.railway.app';
+
+  function getSessionToken() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get('session') || '';
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  var ICONS = {
+    check: '<svg width="{S}" height="{S}" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="{C}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    clock: '<svg width="{S}" height="{S}" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="{C}" stroke-width="2"/><path d="M12 7v5l3 3" stroke="{C}" stroke-width="2" stroke-linecap="round"/></svg>',
+    person: '<svg width="{S}" height="{S}" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="{C}" stroke-width="2"/><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" stroke="{C}" stroke-width="2" stroke-linecap="round"/></svg>',
+    arrow: '<svg width="{S}" height="{S}" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="{C}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    calendar: '<svg width="{S}" height="{S}" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="{C}" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="{C}" stroke-width="2" stroke-linecap="round"/></svg>'
+  };
+  function icon(name, size, color) {
+    return ICONS[name].replace(/\{S\}/g, size || 16).replace(/\{C\}/g, color || 'currentColor');
+  }
+
+  var state = {
+    loading: true,
+    fatalError: null,
+    session: null,
+    step: 0,
+    selectedService: null,
+    selectedSlot: null,
+    activeDay: null,
+    payLoading: false,
+    payError: '',
+    bookingId: ''
+  };
+
+  var appEl = document.getElementById('app');
+
+  function render() {
+    if (state.loading) { appEl.innerHTML = renderLoading(); return; }
+    if (state.fatalError === 'missing') { appEl.innerHTML = renderFatal('Link not found', 'This booking link looks incomplete. Please request a new link on WhatsApp.'); return; }
+    if (state.fatalError) { appEl.innerHTML = renderFatal('This link has expired', escapeHtml(state.fatalError) + ' Please send a message on WhatsApp to get a fresh booking link.'); return; }
+
+    var html = renderHeader();
+    if (state.step < 3) html += renderProgress();
+
+    if (state.step === 0) html += renderServiceStep();
+    else if (state.step === 1) html += renderSlotStep();
+    else if (state.step === 2) html += renderConfirmStep() + renderActionBar();
+    else if (state.step === 3) html += renderSuccessStep();
+
+    appEl.innerHTML = html;
+    attachHandlers();
+  }
+
+  function renderLoading() {
+    return '<div class="screen-center"><div class="spinner"></div></div>';
+  }
+
+  function renderFatal(title, msg) {
+    return '<div class="screen-center"><div><div class="display fatal-title">' + escapeHtml(title) + '</div><div class="fatal-msg">' + msg + '</div></div></div>';
+  }
+
+  function renderHeader() {
+    var biz = state.session ? state.session.business_name : 'Loading…';
+    var cust = state.session ? state.session.customer_name : '';
+    return (
+      '<div class="header">' +
+        '<div class="header-row">' +
+          '<div class="logo-badge display">S</div>' +
+          '<div style="min-width:0">' +
+            '<div class="display header-name">' + escapeHtml(biz) + '</div>' +
+            '<div class="header-sub">' + (cust ? 'Booking for ' + escapeHtml(cust) : 'Book your appointment') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderProgress() {
+    var steps = ['Service', 'Time', 'Pay'];
+    var html = '<div class="progress">';
+    steps.forEach(function (label, i) {
+      var cls = i < state.step ? 'done' : (i === state.step ? 'active' : '');
+      var dotContent = i < state.step ? icon('check', 12, '#fff') : (i + 1);
+      html += '<div class="progress-item">' +
+        '<div class="progress-dot ' + cls + '">' + dotContent + '</div>' +
+        '<span class="progress-label ' + (i === state.step ? 'active' : '') + '">' + label + '</span>' +
+      '</div>';
+      if (i < steps.length - 1) html += '<div class="progress-line"></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function groupBy(arr, fn) {
+    var out = {};
+    arr.forEach(function (item) {
+      var k = fn(item);
+      if (!out[k]) out[k] = [];
+      out[k].push(item);
+    });
+    return out;
+  }
+
+  function renderServiceStep() {
+    var services = state.session.services || [];
+    if (services.length === 0) {
+      return '<div class="empty-state"><div class="empty-text">No services available right now. Please contact the business directly.</div></div>';
+    }
+    var grouped = groupBy(services, function (s) { return s.category || 'general'; });
+
+    var html = '<div style="padding:18px 20px 100px">' +
+      '<div class="display section-title">Choose a service</div>' +
+      '<div class="section-sub">Tap a service to continue</div>';
+
+    Object.keys(grouped).forEach(function (cat) {
+      html += '<div style="margin-bottom:18px">' +
+        '<div class="cat-label"><div class="cat-bar"></div>' + escapeHtml(cat) + '</div>';
+      grouped[cat].forEach(function (s) {
+        html += '<button class="service-card" data-action="select-service" data-id="' + escapeHtml(s.service_id) + '">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div class="service-name">' + escapeHtml(s.name) + '</div>' +
+            '<div class="service-meta">' +
+              '<span class="service-meta-item">' + icon('clock', 12) + ' ' + s.duration_min + ' min</span>' +
+              (s.description ? '<span class="service-desc">' + escapeHtml(s.description) + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="service-price display">₹' + s.price + '</div>' +
+        '</button>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function fmtDay(dateKey) {
+    var d = new Date(dateKey);
+    var today = new Date();
+    var tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
+    if (d.toDateString() === today.toDateString()) return 'Today';
+    if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  }
+  function fmtDateTime(iso) {
+    return new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  }
+
+  function renderSlotStep() {
+    var slots = state.session.slots || [];
+    var svc = state.selectedService;
+
+    if (slots.length === 0) {
+      return '<div class="empty-state">' +
+        '<div class="empty-text">No slots available in the next 2 weeks.</div>' +
+        '<button class="btn-ghost" data-action="back-to-service">← Choose a different service</button>' +
+      '</div>';
+    }
+
+    var grouped = groupBy(slots, function (s) { return new Date(s.slot_datetime).toDateString(); });
+    var dayKeys = Object.keys(grouped);
+    if (!state.activeDay || !grouped[state.activeDay]) state.activeDay = dayKeys[0];
+
+    var html = '<div style="padding:18px 0 100px">' +
+      '<div style="padding:0 20px">' +
+        '<div class="display section-title">Pick a time</div>' +
+        '<div class="section-sub">' + escapeHtml(svc.name) + ' · ' + svc.duration_min + ' min</div>' +
+      '</div>' +
+      '<div class="day-tabs">';
+
+    dayKeys.forEach(function (key) {
+      var cls = key === state.activeDay ? 'active' : '';
+      html += '<button class="day-tab ' + cls + '" data-action="select-day" data-day="' + escapeHtml(key) + '">' + fmtDay(key) + '</button>';
+    });
+    html += '</div><div class="slot-grid">';
+
+    (grouped[state.activeDay] || []).forEach(function (slot) {
+      html += '<button class="slot-btn" data-action="select-slot" data-id="' + escapeHtml(slot.slot_id) + '">' +
+        '<div class="slot-time">' + fmtTime(slot.slot_datetime) + '</div>' +
+        '<div class="slot-staff">' + icon('person', 10) + ' ' + escapeHtml(slot.staff_name) + '</div>' +
+      '</button>';
+    });
+
+    html += '</div>' +
+      '<button class="back-link" data-action="back-to-service">← Change service</button>' +
+    '</div>';
+    return html;
+  }
+
+  function renderConfirmStep() {
+    var svc = state.selectedService;
+    var slot = state.selectedSlot;
+    var cust = state.session.customer_name;
+    var deposit = Math.max(Math.round(svc.price * 0.25), 1);
+    var balance = svc.price - deposit;
+
+    var html = '<div style="padding:18px 20px 120px">' +
+      '<div class="display section-title">Confirm &amp; pay</div>' +
+      '<div class="section-sub">Pay 25% now to secure your slot</div>' +
+      '<div class="ticket">' +
+        '<div class="ticket-top">' +
+          '<div class="ticket-head">' +
+            '<div><div class="ticket-service-name">' + escapeHtml(svc.name) + '</div>' +
+            '<div class="ticket-duration">' + svc.duration_min + ' minutes</div></div>' +
+            '<div class="ticket-price display">₹' + svc.price + '</div>' +
+          '</div>' +
+          '<div class="ticket-detail-row">' + icon('calendar', 14, 'var(--purple)') + ' ' + fmtDateTime(slot.slot_datetime) + '</div>' +
+          '<div class="ticket-detail-row">' + icon('person', 14, 'var(--purple)') + ' with ' + escapeHtml(slot.staff_name) + '</div>' +
+          (cust ? '<div class="ticket-detail-row">' + icon('check', 14, 'var(--purple)') + ' booked for ' + escapeHtml(cust) + '</div>' : '') +
+        '</div>' +
+        '<div class="ticket-divider"><div class="ticket-notch" style="left:-26px"></div><div class="ticket-notch" style="right:-26px"></div></div>' +
+        '<div class="ticket-bottom">' +
+          '<div class="ticket-row"><span>Pay now (25%)</span><span class="amt">₹' + deposit + '</span></div>' +
+          '<div class="ticket-row"><span>Pay at venue</span><span class="amt-muted">₹' + balance + '</span></div>' +
+        '</div>' +
+      '</div>' +
+      (state.payError ? '<div class="error-box">' + escapeHtml(state.payError) + '</div>' : '') +
+      '<div class="fine-print">Secure payment via Razorpay. Your slot is held for 15 minutes.</div>' +
+    '</div>';
+    return html;
+  }
+
+  function renderActionBar() {
+    var svc = state.selectedService;
+    var deposit = Math.max(Math.round(svc.price * 0.25), 1);
+    var content = state.payLoading
+      ? '<span class="spinner-sm"></span>'
+      : 'Pay ₹' + deposit + ' &amp; confirm ' + icon('arrow', 16, '#fff');
+    return '<div class="action-bar"><button class="btn-primary" data-action="pay" ' + (state.payLoading ? 'disabled' : '') + '>' + content + '</button></div>';
+  }
+
+  function renderSuccessStep() {
+    var svc = state.selectedService;
+    var slot = state.selectedSlot;
+    return '<div class="success-wrap">' +
+      '<div class="success-icon">' + icon('check', 36, 'var(--green)') + '</div>' +
+      '<div class="display success-title">Booking confirmed!</div>' +
+      '<div class="success-sub">' + escapeHtml(svc.name) + ' with ' + escapeHtml(slot.staff_name) + '<br>' + fmtDateTime(slot.slot_datetime) + '</div>' +
+      '<div class="booking-id-box">' +
+        '<div class="booking-id-label">Booking ID</div>' +
+        '<div class="display booking-id-value">' + escapeHtml(state.bookingId) + '</div>' +
+      '</div>' +
+      '<div class="success-footnote">We\'ve sent your invoice on WhatsApp. See you soon! 🙏</div>' +
+    '</div>';
+  }
+
+  function attachHandlers() {
+    appEl.querySelectorAll('[data-action="select-service"]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-id');
+        state.selectedService = state.session.services.find(function (s) { return s.service_id === id; });
+        state.step = 1;
+        state.activeDay = null;
+        render();
+      });
+    });
+
+    appEl.querySelectorAll('[data-action="select-day"]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        state.activeDay = el.getAttribute('data-day');
+        render();
+      });
+    });
+
+    appEl.querySelectorAll('[data-action="select-slot"]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-id');
+        state.selectedSlot = state.session.slots.find(function (s) { return s.slot_id === id; });
+        state.step = 2;
+        state.payError = '';
+        render();
+      });
+    });
+
+    var backBtn = appEl.querySelector('[data-action="back-to-service"]');
+    if (backBtn) backBtn.addEventListener('click', function () {
+      state.step = 0;
+      render();
+    });
+
+    var payBtn = appEl.querySelector('[data-action="pay"]');
+    if (payBtn) payBtn.addEventListener('click', handlePay);
+  }
+
+  function handlePay() {
+    state.payLoading = true;
+    state.payError = '';
+    render();
+
+    var sessionToken = getSessionToken();
+    fetch(API_BASE + '/api/v1/booking-session/' + sessionToken + '/select', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: state.selectedService.service_id,
+        slot_id: state.selectedSlot.slot_id
+      })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Could not process booking.');
+          return data;
+        });
+      })
+      .then(function (data) {
+        state.bookingId = data.booking_id;
+        state.payLoading = false;
+        if (data.payment_link && data.payment_link.indexOf('/pay-test/') !== -1) {
+          state.step = 3;
+          render();
+        } else if (data.payment_link) {
+          window.location.href = data.payment_link;
+        } else {
+          state.step = 3;
+          render();
+        }
+      })
+      .catch(function (err) {
+        state.payLoading = false;
+        state.payError = err.message;
+        render();
+      });
+  }
+
+  function boot() {
+    var sessionToken = getSessionToken();
+    if (!sessionToken) {
+      state.loading = false;
+      state.fatalError = 'missing';
+      render();
+      return;
+    }
+
+    fetch(API_BASE + '/api/v1/booking-session/' + sessionToken)
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Could not load booking session.');
+          return data;
+        });
+      })
+      .then(function (data) {
+        state.session = data;
+        state.loading = false;
+        render();
+      })
+      .catch(function (err) {
+        state.loading = false;
+        state.fatalError = err.message;
+        render();
+      });
+  }
+
+  render();
+  boot();
+})();
+</script>
+</body>
+</html>
