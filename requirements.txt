@@ -18,7 +18,7 @@ passlib[bcrypt]==1.7.4
 pydantic[email]==2.7.1
 
 # AI
-google-generativeai==0.7.2
+# google-generativeai removed — switched to Groq API (httpx-based, no extra package)
 
 # PDF generation
 reportlab==4.2.0

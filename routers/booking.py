@@ -19,7 +19,6 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from google import generativeai as genai
 
 from database import get_db, Collections
 
@@ -30,11 +29,9 @@ router = APIRouter(prefix="/api/v1/webhook", tags=["WhatsApp Booking"])
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "saarthi_verify_token")
 META_ACCESS_TOKEN     = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION      = os.getenv("META_API_VERSION", "v19.0")
-GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY          = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL            = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 APP_BASE_URL          = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 
 # ── Meta Webhook Verification (GET) ───────────────────────────────────────────
@@ -286,7 +283,7 @@ def _generate_booking_link_message(
     return (
         f"Dhanyavaad, {customer_name}! 😊\n\n"
         f"Neeche diye link pe jaake apni booking complete karein:\n"
-        f"👉 {session['booking_url']}\n\n"
+        f"👉 {session['booking_url']}\n \n"
         f"Yahan se aap service, staff aur time slot choose kar sakte hain "
         f"aur payment bhi kar sakte hain. Link 30 minute tak valid hai. 🙏"
     )
@@ -327,7 +324,7 @@ def _store_conversation_turn(client_id: str, customer_phone: str, user_msg: str,
     })
 
 
-# ── Gemini AI — Simplified (sirf conversation + intent) ───────────────────────
+# ── Groq AI — Simplified (sirf conversation + intent) ─────────────────────────
 
 async def _invoke_gemini(
     user_message: str,
@@ -336,11 +333,13 @@ async def _invoke_gemini(
     customer_name: str = "",
 ) -> dict:
     """
-    Gemini ab sirf 2 kaam karta hai:
+    AI ab sirf 2 kaam karta hai (Groq's Llama 3.3 70B se):
     1. Friendly Hinglish conversation
     2. Detect karna ki customer booking karna chahta hai ya nahi
 
     Asli booking (service/staff/slot/payment) ab Web App mein hoti hai.
+    Function name '_invoke_gemini' rakha hai backward-compat ke liye
+    (booking_session.py aur dusri jagah se isi naam se call hota hai).
     """
     persona_name  = bot_profile.get("persona_name", "Priya")
     business_type = bot_profile.get("business_type", "salon")
@@ -368,21 +367,36 @@ CONVERSATION HISTORY:
 
 Never invent prices or specific slot times — those are handled separately."""
 
+    if not GROQ_API_KEY:
+        logger.error("GROQ_API_KEY not configured.")
+        return {
+            "reply_text": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
+            "intent"    : "error",
+        }
+
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
-            system_instruction=system_prompt,
-        )
-        response = model.generate_content(
-            user_message,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.5,
-                max_output_tokens=200,
-            ),
-        )
-        raw_text = response.text.strip()
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type" : "application/json",
+                },
+                json={
+                    "model"      : GROQ_MODEL,
+                    "messages"   : [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": user_message},
+                    ],
+                    "temperature": 0.5,
+                    "max_tokens" : 200,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        logger.error("Gemini API error: %s", e)
+        logger.error("Groq API error: %s", e)
         return {
             "reply_text": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
             "intent"    : "error",
