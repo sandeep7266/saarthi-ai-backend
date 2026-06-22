@@ -7,6 +7,7 @@ Customer Web Booking flow:
 4. Web app session se customer details fetch karta hai
 5. Customer service+staff+slot select karta hai → payment → booking confirm
 """
+from google.cloud.firestore import FieldFilter
 from fastapi import APIRouter, HTTPException, Query, Request # <-- Add Request here
 import logging
 import os
@@ -209,11 +210,15 @@ async def select_service_slot(request: Request, session_token: str, body: Update
     service_data = service_doc.to_dict()
 
     # Slot fetch karo
-    slot_doc = (
+    slots_docs = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
         .collection(Collections.SLOTS)
-        .document(body.slot_id)
+        .where(filter=FieldFilter("status", "==", "available"))
+        .where(filter=FieldFilter("slot_datetime", ">=", slot_start))
+        .where(filter=FieldFilter("slot_datetime", "<=", slot_end))
+        .order_by("slot_datetime")
+        .limit(100)
         .get()
     )
     if not slot_doc.exists:
