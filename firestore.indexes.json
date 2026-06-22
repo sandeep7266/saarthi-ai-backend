@@ -19,14 +19,11 @@
     {
       "collectionGroup": "turns",
       "fieldPath": "yourFieldName",
-      "indexes": [
+      "queryScope": "COLLECTION",
+      "fields": [
         {
-          "order": "ASCENDING",
-          "queryScope": "COLLECTION_GROUP"
-        },
-        {
-          "order": "DESCENDING",
-          "queryScope": "COLLECTION_GROUP"
+          "fieldPath": "yourFieldName",
+          "order": "ASCENDING"
         }
       ]
     }

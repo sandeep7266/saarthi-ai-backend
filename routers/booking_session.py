@@ -7,7 +7,7 @@ Customer Web Booking flow:
 4. Web app session se customer details fetch karta hai
 5. Customer service+staff+slot select karta hai → payment → booking confirm
 """
-
+from fastapi import APIRouter, HTTPException, Query, Request # <-- Add Request here
 import logging
 import os
 import secrets
@@ -88,7 +88,7 @@ def create_booking_session(
 
 @router.get("/{session_token}")
 @limiter.limit(LIMIT_NORMAL)
-async def get_session(request, session_token: str):
+async def get_session(request: Request, session_token: str):
     """
     Web booking app yeh call karta hai page load pe.
     Session valid hai to client_id + customer details return karta hai,
@@ -175,7 +175,7 @@ class UpdateSessionRequest(BaseModel):
 
 @router.patch("/{session_token}/select")
 @limiter.limit(LIMIT_NORMAL)
-async def select_service_slot(request, session_token: str, body: UpdateSessionRequest):
+async def select_service_slot(request: Request, session_token: str, body: UpdateSessionRequest):
     """
     Customer ne service + slot choose kar liya web app mein.
     Yeh slot ko temporarily lock karega aur booking record banayega
