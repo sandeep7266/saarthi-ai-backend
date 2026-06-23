@@ -104,7 +104,12 @@ async def whatsapp_incoming(request: Request):
 
         # ── Conversation history ────────────────────────────────────────────
         conversation_history = _get_conversation_history(client_id, from_number)
-        bot_profile = client_data.get("gemini_bot_profile", {})
+
+        # business_type top-level client field se lo (always reliable) —
+        # gemini_bot_profile incomplete ho sakta hai agar client manually
+        # activate kiya gaya ho (Razorpay webhook se nahi guzra).
+        bot_profile = dict(client_data.get("gemini_bot_profile", {}))
+        bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
 
         # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
@@ -283,7 +288,7 @@ def _generate_booking_link_message(
     return (
         f"Dhanyavaad, {customer_name}! 😊\n\n"
         f"Neeche diye link pe jaake apni booking complete karein:\n"
-        f"👉 {session['booking_url']}\n \n"
+        f"👉 {session['booking_url']}\n\n"
         f"Yahan se aap service, staff aur time slot choose kar sakte hain "
         f"aur payment bhi kar sakte hain. Link 30 minute tak valid hai. 🙏"
     )
