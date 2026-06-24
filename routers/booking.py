@@ -72,13 +72,15 @@ async def whatsapp_incoming(request: Request):
         from_number = msg.get("from", "")
         msg_type    = msg.get("type", "")
         msg_body    = ""
+        interactive_id = ""
 
         if msg_type == "text":
             msg_body = msg.get("text", {}).get("body", "").strip()
         elif msg_type == "interactive":
             interactive = msg.get("interactive", {})
             if interactive.get("type") == "button_reply":
-                msg_body = interactive["button_reply"]["title"]
+                msg_body       = interactive["button_reply"]["title"]
+                interactive_id = interactive["button_reply"]["id"]
         else:
             _send_whatsapp_text(phone_number_id, from_number,
                 "Sorry, main abhi sirf text messages samajh sakti hoon. 😊")
@@ -93,7 +95,16 @@ async def whatsapp_incoming(request: Request):
         # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
-            logger.warning("No active tenant found for phone_number_id: %s", phone_number_id)
+            # No active client owns this phone_number_id — this is either a
+            # brand-new prospective client, or a message on the company's own
+            # onboarding number. Hand off to the Master Onboarding Bot.
+            from routers.master_onboarding import handle_onboarding_message
+            await handle_onboarding_message(
+                phone_number_id=phone_number_id,
+                from_number=from_number,
+                msg_body=msg_body,
+                interactive_id=interactive_id,
+            )
             return {"status": "ok"}
 
         if client_data.get("status") != "active":
@@ -424,11 +435,14 @@ async def _initiate_booking(
     client_data: dict,
     customer_phone: str,
     slot_info: dict,
-    service_info: dict,
+    services_info: list[dict],
 ) -> dict:
     """
     Lock slot as pending_payment, create booking doc, generate Razorpay deposit link.
     Called from booking_session.py after customer selects via Web App.
+
+    services_info: list of {"service_id", "name", "price"} — supports multiple
+    services booked together against a single slot+staff (cart-style booking).
     """
     import razorpay
 
@@ -440,9 +454,11 @@ async def _initiate_booking(
     booking_id = str(uuid.uuid4())[:8].upper()
     now        = datetime.now(timezone.utc)
 
-    service_price  = int(service_info.get("price", 0))
-    deposit_amount = int(service_price * DEPOSIT_PERCENT)
+    total_price    = sum(int(s.get("price", 0)) for s in services_info)
+    deposit_amount = int(total_price * DEPOSIT_PERCENT)
     deposit_paise  = max(deposit_amount * 100, 100)
+
+    service_names_joined = ", ".join(s.get("name", "") for s in services_info)
 
     slot_id = slot_info["id"]
 
@@ -475,9 +491,13 @@ async def _initiate_booking(
         "customer_phone": customer_phone,
         "slot_id"       : slot_id,
         "slot_datetime" : slot_info.get("slot_datetime"),
-        "staff_name"    : service_info.get("staff") or slot_info.get("staff_name", ""),
-        "service_name"  : service_info.get("name", ""),
-        "service_price" : service_price,
+        "staff_name"    : slot_info.get("staff_name", ""),
+        "services"      : [
+            {"service_id": s.get("service_id", ""), "name": s.get("name", ""), "price": int(s.get("price", 0))}
+            for s in services_info
+        ],
+        "service_name"  : service_names_joined,  # backward-compat (PDF invoice, analytics)
+        "service_price" : total_price,           # backward-compat (PDF invoice, analytics)
         "deposit_amount": deposit_amount,
         "status"        : "pending_payment",
         "created_at"    : now,
@@ -509,7 +529,7 @@ async def _initiate_booking(
             "amount"        : deposit_paise,
             "currency"      : "INR",
             "accept_partial": False,
-            "description"   : f"25% Advance — {service_info['name']} @ {business_name}",
+            "description"   : f"25% Advance — {service_names_joined} @ {business_name}",
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,

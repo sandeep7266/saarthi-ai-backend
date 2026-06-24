@@ -146,13 +146,17 @@ async def razorpay_webhook(
 async def _handle_b2b_onboarding_payment(entity: dict) -> None:
     """
     Fires on 'payment_link.paid'.
-    Activates vendor, sets subscription window, configures Gemini bot profile.
+    Activates vendor, sets subscription window, configures bot profile,
+    generates the client's customer-facing QR code, and sends a welcome
+    message + subscription invoice — to BOTH the new client and the
+    company admin.
     """
     payment_link = entity.get("payment_link", {}).get("payload", {})
     notes        = payment_link.get("notes", {})
     client_id    = notes.get("client_id")
     plan         = notes.get("plan", "basic")
     billing_cycle= notes.get("billing_cycle", "monthly")
+    payment_id   = payment_link.get("id", "") or entity.get("payment_link", {}).get("entity", {}).get("id", "")
 
     if not client_id:
         logger.error("B2B webhook: missing client_id in notes. Payload: %s", entity)
@@ -178,9 +182,10 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
     sub_end = now + timedelta(days=days)
     grace_end = sub_end + timedelta(days=3)
 
-    # Configure Gemini persona based on business type
+    # Configure bot persona based on business type
     business_type = client_data.get("business_type", "salon")
     business_name = client_data.get("business_name", "")
+    owner_phone    = client_data.get("owner_phone", "")
     persona = {
         "persona_name": "Priya",
         "language"    : "hi-en",
@@ -209,17 +214,85 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
         client_id, plan, sub_end.isoformat()
     )
 
-    # Send welcome WhatsApp message to owner
-    owner_phone      = client_data.get("owner_phone", "")
-    phone_number_id  = client_data.get("whatsapp_phone_id", "")
-    if owner_phone and phone_number_id:
+    # ── Generate client's customer-facing QR code ──────────────────────────────
+    # Points at the client's OWN WhatsApp number once they've connected one in
+    # Meta. Until then it falls back to owner_phone so the QR is still usable
+    # (they can swap it once their dedicated business number is live).
+    from utils.qr_generator import generate_client_qr
+
+    qr_target_number = client_data.get("whatsapp_phone_id_number") or owner_phone
+    qr_url = ""
+    if qr_target_number:
+        qr_url = generate_client_qr(
+            client_id=client_id,
+            business_name=business_name,
+            whatsapp_number=qr_target_number,
+        )
+        if qr_url:
+            client_ref.update({"qr_code_url": qr_url})
+
+    # ── Generate subscription invoice PDF ───────────────────────────────────────
+    from utils.invoice_generator import generate_subscription_invoice
+
+    setup_fee = 49900  # ₹499 in paise, matches onboard.py SETUP_FEE_PAISE
+    plan_amount = {
+        "basic"  : {"monthly": 99900,  "yearly": 999900},
+        "premium": {"monthly": 199900, "yearly": 1999900},
+    }.get(plan, {}).get(billing_cycle, 99900)
+    total_paise = setup_fee + plan_amount
+
+    updated_client_data = {**client_data, "subscription_end_date": sub_end}
+    invoice_url = generate_subscription_invoice(
+        client_id=client_id,
+        client_data=updated_client_data,
+        payment_id=payment_id,
+        amount=total_paise,
+    )
+
+    # ── Notify the NEW CLIENT (via the company's onboarding WhatsApp number) ──
+    # The client's own Meta number isn't connected yet at this point, so we
+    # send from the company's number — same number their onboarding chat ran on.
+    company_phone_id = os.getenv("COMPANY_WHATSAPP_PHONE_ID", "")
+    client_msg = (
+        f"🎉 *Welcome to Saarthi-AI, {business_name}!*\n\n"
+        f"Plan: *{plan.title()} ({billing_cycle})*\n"
+        f"Valid till: *{sub_end.strftime('%d %b %Y')}*\n\n"
+        f"Aapka QR code neeche hai — ise apne shop mein print/display karein. "
+        f"Customers isse scan karke directly aapke WhatsApp pe booking shuru kar sakenge.\n\n"
+        f"Next step: apna business WhatsApp number Meta se connect karein "
+        f"(guide support@saarthi-ai.in pe milegi). 🙏"
+    )
+
+    if company_phone_id and owner_phone:
+        _send_whatsapp_text(company_phone_id, owner_phone, client_msg)
+        if qr_url:
+            _send_whatsapp_document(
+                company_phone_id, owner_phone, qr_url,
+                f"qr_{client_id}.png",
+                f"{business_name} — Customer QR Code",
+            )
+        if invoice_url:
+            _send_whatsapp_document(
+                company_phone_id, owner_phone, invoice_url,
+                f"invoice_{client_id}.pdf",
+                "Saarthi-AI Subscription Invoice",
+            )
+    else:
+        logger.warning(
+            "Could not send client welcome message — missing company_phone_id or owner_phone "
+            "(client_id=%s)", client_id
+        )
+
+    # ── Notify COMPANY ADMIN of the new paying client ──────────────────────────
+    company_admin_phone = os.getenv("COMPANY_ADMIN_PHONE", "")
+    if company_phone_id and company_admin_phone:
         _send_whatsapp_text(
-            phone_number_id,
-            owner_phone,
-            f"🎉 Saarthi-AI activated for *{business_name}*!\n\n"
-            f"Plan: *{plan.title()} ({billing_cycle})*\n"
-            f"Valid till: *{sub_end.strftime('%d %b %Y')}*\n\n"
-            f"Aapka AI WhatsApp receptionist ab live hai. Namaskar! 🙏"
+            company_phone_id, company_admin_phone,
+            f"💰 *New client activated!*\n\n"
+            f"{business_name} ({business_type})\n"
+            f"Plan: {plan.title()} ({billing_cycle})\n"
+            f"Owner: {client_data.get('owner_name','')} | {owner_phone}\n"
+            f"Client ID: {client_id}"
         )
 
 

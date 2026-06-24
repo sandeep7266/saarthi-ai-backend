@@ -91,6 +91,7 @@
       position: absolute; inset: 0; padding: 1.5px; border-radius: 16px;
       background: linear-gradient(135deg, var(--brand-purple), var(--brand-red));
       -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
       -webkit-mask-composite: destination-out; mask-composite: exclude;
     }
 
@@ -176,7 +177,9 @@
     .stat-num {
       font-size: 3rem; font-weight: 700; letter-spacing: -0.04em;
       background: linear-gradient(135deg, #A78BFA, #F472B6);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
     /* ── Feature icon ────────────────────────────────────────── */

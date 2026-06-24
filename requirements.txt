@@ -37,3 +37,7 @@ tenacity==8.2.3
 
 # Cloudinary (PDF invoice storage - free tier)
 cloudinary==1.40.0
+
+# QR code generation (client onboarding)
+qrcode==7.4.2
+Pillow==10.4.0

@@ -1,6 +1,9 @@
 """
 routers/onboard.py
 Paid B2B vendor onboarding — creates Firestore tenant doc + Razorpay payment link.
+
+Supports five business verticals: salon, parlour, clinic, cafe, restaurant.
+Each vertical gets a tailored Gemini bot persona and default service categories.
 """
 
 import os
@@ -8,11 +11,12 @@ import hmac
 import hashlib
 import logging
 from datetime import datetime, timezone
+from enum import Enum
 
 import razorpay
 from fastapi import APIRouter, HTTPException, Request
 from utils.rate_limiter import limiter, LIMIT_STRICT
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from database import get_db, Collections
 
@@ -30,19 +34,64 @@ PLAN_PRICING = {
 SETUP_FEE_PAISE = 49900  # ₹499 one-time setup fee
 
 
+class BusinessType(str, Enum):
+    """Supported business verticals — shown as a dropdown in Swagger UI."""
+    salon      = "salon"
+    parlour    = "parlour"
+    clinic     = "clinic"
+    cafe       = "cafe"
+    restaurant = "restaurant"
+
+
+class BillingCycle(str, Enum):
+    monthly = "monthly"
+    yearly  = "yearly"
+
+
+class PlanTier(str, Enum):
+    basic   = "basic"
+    premium = "premium"
+
+
+# Default persona language/tone tweaks per vertical — used when configuring
+# the Gemini/Groq bot profile after payment activation (see payments.py).
+BUSINESS_TYPE_DEFAULTS = {
+    BusinessType.salon: {
+        "service_noun": "appointment",
+        "default_categories": ["hair", "spa", "nails"],
+    },
+    BusinessType.parlour: {
+        "service_noun": "appointment",
+        "default_categories": ["hair", "skin", "makeup"],
+    },
+    BusinessType.clinic: {
+        "service_noun": "consultation",
+        "default_categories": ["consultation", "checkup", "therapy"],
+    },
+    BusinessType.cafe: {
+        "service_noun": "order",
+        "default_categories": ["beverage", "food", "dessert"],
+    },
+    BusinessType.restaurant: {
+        "service_noun": "reservation",
+        "default_categories": ["starter", "main_course", "dessert", "beverage"],
+    },
+}
+
+
 # ── Pydantic Models ────────────────────────────────────────────────────────────
 
 class OnboardRequest(BaseModel):
-    business_name  : str
-    owner_name     : str
-    owner_phone    : str   # E.164 format: +919876543210
-    owner_email    : EmailStr
-    business_type  : str   # "salon" | "cafe"
-    city           : str
-    address        : str
-    plan           : str   # "basic" | "premium"
-    billing_cycle  : str   # "monthly" | "yearly"
-    whatsapp_phone_id: str  # Meta Phone Number ID for this business
+    business_name  : str = Field(..., examples=["Sharma Hair Salon"])
+    owner_name     : str = Field(..., examples=["Ramesh Sharma"])
+    owner_phone    : str = Field(..., description="E.164 format with country code", examples=["+919876543210"])
+    owner_email    : EmailStr = Field(..., examples=["ramesh@example.com"])
+    business_type  : BusinessType = Field(..., description="One of: salon, parlour, clinic, cafe, restaurant")
+    city           : str = Field(..., examples=["Ranchi"])
+    address        : str = Field(..., examples=["Shop 5, Main Market, Ranchi"])
+    plan           : PlanTier = Field(..., description="basic (₹999/mo) or premium (₹1999/mo)")
+    billing_cycle  : BillingCycle
+    whatsapp_phone_id: str = Field(..., description="Meta WhatsApp Cloud API Phone Number ID for this business")
 
 class OnboardResponse(BaseModel):
     client_id     : str
@@ -52,23 +101,40 @@ class OnboardResponse(BaseModel):
 
 # ── Route ──────────────────────────────────────────────────────────────────────
 
-@router.post("/create-pending-vendor", response_model=OnboardResponse, status_code=201)
+@router.post(
+    "/create-pending-vendor",
+    response_model=OnboardResponse,
+    status_code=201,
+    summary="Register a new business (salon, parlour, clinic, cafe, or restaurant)",
+    description=(
+        "Step 1 of B2B onboarding. Creates an inactive Firestore tenant document "
+        "and a Razorpay payment link for the setup fee + first billing cycle. "
+        "The tenant is activated automatically once payment is confirmed via the "
+        "Razorpay webhook (see /api/v1/payments/razorpay-webhook)."
+    ),
+)
 @limiter.limit(LIMIT_STRICT)
 async def create_pending_vendor(request: Request, body: OnboardRequest):
     """
-    Step 1 of B2B onboarding:
+    HTTP entry point (rate-limited). Delegates to the shared core function so
+    that internal callers (e.g. the WhatsApp Master Onboarding Bot) can reuse
+    the exact same logic without going through slowapi's Request dependency.
+    """
+    return await _create_pending_vendor_core(body)
+
+
+async def _create_pending_vendor_core(body: OnboardRequest) -> OnboardResponse:
+    """
+    Step 1 of B2B onboarding (shared core, no rate-limiting/Request dependency):
       1. Validate input & check for duplicate phone
       2. Create Firestore client doc with status='inactive'
       3. Generate Razorpay Payment Link for the setup fee
       4. Return payment link to redirect the prospect
-    """
 
-    if body.business_type not in ("salon", "cafe"):
-        raise HTTPException(status_code=422, detail="business_type must be 'salon' or 'cafe'.")
-    if body.plan not in PLAN_PRICING:
-        raise HTTPException(status_code=422, detail="plan must be 'basic' or 'premium'.")
-    if body.billing_cycle not in ("monthly", "yearly"):
-        raise HTTPException(status_code=422, detail="billing_cycle must be 'monthly' or 'yearly'.")
+    Called by:
+      - POST /api/v1/onboard/create-pending-vendor (rate-limited HTTP route)
+      - routers/master_onboarding.py (WhatsApp-driven onboarding, internal call)
+    """
 
     db = get_db()
 
@@ -82,6 +148,10 @@ async def create_pending_vendor(request: Request, body: OnboardRequest):
     if existing:
         raise HTTPException(status_code=409, detail="A vendor with this phone number is already registered.")
 
+    # ── Vertical-specific bot persona defaults ─────────────────────────────────
+    defaults = BUSINESS_TYPE_DEFAULTS.get(body.business_type, {})
+    service_noun = defaults.get("service_noun", "appointment")
+
     # ── Create Firestore tenant document ──────────────────────────────────────
     now = datetime.now(timezone.utc)
     client_doc = {
@@ -89,21 +159,26 @@ async def create_pending_vendor(request: Request, body: OnboardRequest):
         "owner_name"           : body.owner_name,
         "owner_phone"          : body.owner_phone,
         "owner_email"          : body.owner_email,
-        "business_type"        : body.business_type,
+        "business_type"        : body.business_type.value,
         "city"                 : body.city,
         "address"              : body.address,
-        "plan"                 : body.plan,
-        "billing_cycle"        : body.billing_cycle,
+        "plan"                 : body.plan.value,
+        "billing_cycle"        : body.billing_cycle.value,
         "whatsapp_phone_id"    : body.whatsapp_phone_id,
         "status"               : "inactive",
         "razorpay_sub_id"      : None,
         "razorpay_payment_link_id": None,
         "subscription_end_date": None,
         "grace_period_end"     : None,
+        "default_categories"   : defaults.get("default_categories", []),
         "gemini_bot_profile"   : {
             "persona_name" : "Priya",
             "language"     : "hi-en",   # Hinglish default
-            "welcome_msg"  : f"Namaste! Main Priya hoon, {body.business_name} ki virtual receptionist. Aapki kya madad kar sakti hoon? 😊",
+            "business_type": body.business_type.value,
+            "welcome_msg"  : (
+                f"Namaste! Main Priya hoon, {body.business_name} ki virtual receptionist. "
+                f"{service_noun.title()} ke liye madad kar sakti hoon. 😊"
+            ),
         },
         "created_at"           : now,
         "updated_at"           : now,
@@ -129,14 +204,14 @@ async def create_pending_vendor(request: Request, body: OnboardRequest):
 
     rz_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
-    plan_amount  = PLAN_PRICING[body.plan][body.billing_cycle]
+    plan_amount  = PLAN_PRICING[body.plan.value][body.billing_cycle.value]
     total_amount = SETUP_FEE_PAISE + plan_amount
 
     payment_link_payload = {
         "amount"      : total_amount,
         "currency"    : "INR",
         "accept_partial": False,
-        "description" : f"Saarthi-AI Setup + First {body.billing_cycle.title()} — {body.plan.title()} Plan ({body.business_name})",
+        "description" : f"Saarthi-AI Setup + First {body.billing_cycle.value.title()} — {body.plan.value.title()} Plan ({body.business_name})",
         "customer"    : {
             "name"   : body.owner_name,
             "email"  : body.owner_email,
@@ -146,8 +221,8 @@ async def create_pending_vendor(request: Request, body: OnboardRequest):
         "reminder_enable": True,
         "notes"       : {
             "client_id"    : client_id,
-            "plan"         : body.plan,
-            "billing_cycle": body.billing_cycle,
+            "plan"         : body.plan.value,
+            "billing_cycle": body.billing_cycle.value,
         },
         "callback_url"    : f"{APP_BASE_URL}/onboard/success",
         "callback_method" : "get",
