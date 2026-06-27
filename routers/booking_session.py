@@ -209,16 +209,12 @@ async def select_service_slot(request: Request, session_token: str, body: Update
         raise HTTPException(status_code=404, detail="Service not found.")
     service_data = service_doc.to_dict()
 
-    # Slot fetch karo
-    slots_docs = (
+    # Slot fetch karo by ID
+    slot_doc = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
         .collection(Collections.SLOTS)
-        .where(filter=FieldFilter("status", "==", "available"))
-        .where(filter=FieldFilter("slot_datetime", ">=", slot_start))
-        .where(filter=FieldFilter("slot_datetime", "<=", slot_end))
-        .order_by("slot_datetime")
-        .limit(100)
+        .document(body.slot_id)
         .get()
     )
     if not slot_doc.exists:

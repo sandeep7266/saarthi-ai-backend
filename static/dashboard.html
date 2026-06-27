@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#0D0B1A" />
+<title>Saarthi-AI — Vendor Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink:        #0D0B1A;
+    --surface:    #13102A;
+    --surface-hi: #1E1A3A;
+    --border:     #2A2550;
+    --purple:     #7C3AED;
+    --purple-lt:  #A78BFA;
+    --purple-dk:  #5B21B6;
+    --crimson:    #DC2626;
+    --gold:       #F59E0B;
+    --green:      #10B981;
+    --red-bg:     #2A1414;
+    --text:       #E5E0FF;
+    --text-soft:  #9CA3AF;
+    --text-mute:  #6B7280;
+    --shadow:     0 4px 24px rgba(124,58,237,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--ink); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .display { font-family: 'Space Grotesk', sans-serif; }
+  button, input, select, textarea { font-family: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--purple); outline-offset: 2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--border);
+    border-top-color: var(--purple); border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  .spinner-sm {
+    width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block;
+  }
+
+  #app { min-height: 100vh; }
+  .screen-center { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+
+  .login-wrap { width: 100%; max-width: 380px; animation: fadeIn 0.3s ease; }
+  .login-logo { display: flex; flex-direction: column; align-items: center; margin-bottom: 36px; }
+  .logo-badge {
+    width: 56px; height: 56px; border-radius: 16px;
+    background: linear-gradient(135deg, #7C3AED, #DC2626);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 26px; margin-bottom: 14px;
+  }
+  .login-title { font-size: 22px; font-weight: 700; }
+  .login-sub { font-size: 13px; color: var(--text-mute); margin-top: 4px; }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--text-soft); margin-bottom: 6px; display: block; }
+  .field-input {
+    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-hi); color: var(--text); font-size: 14px; margin-bottom: 16px;
+  }
+  .field-input::placeholder { color: var(--text-mute); }
+  .btn-primary {
+    width: 100%; padding: 13px; border-radius: 10px; border: none;
+    background: var(--purple); color: #fff; font-size: 14.5px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: var(--purple-dk); }
+  .btn-primary:disabled { background: var(--border); color: var(--text-mute); cursor: default; }
+  .btn-secondary {
+    padding: 9px 16px; border-radius: 9px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-secondary:hover { background: var(--surface-hi); }
+  .btn-danger { background: var(--crimson); color: #fff; border: none; }
+  .btn-danger:hover { background: #B91C1C; }
+  .error-banner {
+    padding: 11px 14px; border-radius: 9px; background: var(--red-bg);
+    border: 1px solid rgba(220,38,38,0.35); color: #FCA5A5; font-size: 13px; margin-bottom: 16px;
+  }
+
+  .shell { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 232px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; z-index: 20;
+    transition: transform 0.25s;
+  }
+  .sidebar-header { padding: 22px 20px 18px; display: flex; align-items: center; gap: 10px; }
+  .sidebar-biz-name { font-size: 14.5px; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-biz-type { font-size: 11px; color: var(--text-mute); }
+  .sidebar-nav { flex: 1; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px;
+    color: var(--text-soft); font-size: 13.5px; font-weight: 500; cursor: pointer; border: none;
+    background: transparent; width: 100%; text-align: left; transition: background 0.15s, color 0.15s;
+  }
+  .nav-item:hover { background: var(--surface-hi); color: var(--text); }
+  .nav-item.active { background: rgba(124,58,237,0.15); color: var(--purple-lt); font-weight: 600; }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+  .sidebar-footer { padding: 14px 20px 20px; border-top: 1px solid var(--border); }
+
+  .main-content { flex: 1; margin-left: 232px; min-height: 100vh; }
+  .topbar {
+    height: 64px; border-bottom: 1px solid var(--border); display: flex; align-items: center;
+    justify-content: space-between; padding: 0 28px; position: sticky; top: 0; background: var(--ink); z-index: 10;
+  }
+  .topbar-title { font-size: 18px; font-weight: 700; }
+  .page-body { padding: 28px; animation: fadeIn 0.25s ease; }
+
+  .mobile-menu-btn { display: none; background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; }
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 19; }
+
+  @media (max-width: 880px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay.show { display: block; }
+    .main-content { margin-left: 0; }
+    .mobile-menu-btn { display: block; }
+    .page-body { padding: 18px; }
+    .topbar { padding: 0 16px; }
+  }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  @media (max-width: 880px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .stat-label { font-size: 11.5px; font-weight: 600; color: var(--text-mute); letter-spacing: 0.3px; text-transform: uppercase; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .stat-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(124,58,237,0.12); }
+  .stat-value { font-size: 25px; font-weight: 700; }
+
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .section-title { font-size: 16px; font-weight: 700; }
+  .section-sub { font-size: 12.5px; color: var(--text-mute); margin-top: 2px; }
+
+  .empty-block { padding: 48px 20px; text-align: center; color: var(--text-mute); font-size: 13.5px; }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--surface-hi);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px;
+    font-size: 13px; box-shadow: var(--shadow); z-index: 100; animation: fadeIn 0.2s ease;
+  }
+  .toast.success { border-color: rgba(16,185,129,0.4); }
+  .toast.error { border-color: rgba(220,38,38,0.4); }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px; width: 100%; max-width: 420px; max-height: 88vh; overflow-y: auto;
+    animation: fadeIn 0.2s ease;
+  }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .modal-sub { font-size: 12.5px; color: var(--text-mute); margin-bottom: 18px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions .btn-primary, .modal-actions .btn-secondary { flex: 1; }
+  .form-row { margin-bottom: 14px; }
+  .form-row-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .radio-row { display: flex; gap: 16px; margin-bottom: 14px; }
+  .radio-opt { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th {
+    text-align: left; padding: 10px 12px; color: var(--text-mute); font-weight: 600;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--border);
+  }
+  .data-table td { padding: 12px; border-bottom: 1px solid var(--border); }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: var(--surface-hi); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+  .badge.active { background: rgba(16,185,129,0.12); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .badge.inactive { background: rgba(107,114,128,0.12); color: var(--text-mute); border: 1px solid rgba(107,114,128,0.3); }
+  .badge.admin { background: rgba(245,158,11,0.12); color: var(--gold); border: 1px solid rgba(245,158,11,0.3); }
+  .badge.staff { background: rgba(124,58,237,0.12); color: var(--purple-lt); border: 1px solid rgba(124,58,237,0.3); }
+
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-hi); color: var(--text-soft); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--purple); }
+  .icon-btn.danger:hover { color: var(--crimson); border-color: var(--crimson); }
+
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; display: inline-block; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch-track {
+    position: absolute; inset: 0; background: var(--border); border-radius: 100px; cursor: pointer; transition: background 0.2s;
+  }
+  .switch-track::before {
+    content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.2s;
+  }
+  .switch input:checked + .switch-track { background: var(--purple); }
+  .switch input:checked + .switch-track::before { transform: translateX(16px); }
+
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip {
+    padding: 6px 14px; border-radius: 100px; border: 1px solid var(--border); background: var(--surface-hi);
+    color: var(--text-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .chip.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+</style>
+</head>
+<body>
+<div id="app"><div class="screen-center"><div class="spinner"></div></div></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : 'https://saarthi-ai-backend-production-9063.up.railway.app';
+
+  var TOKEN_KEY = 'saarthi_dashboard_token';
+
+  var state = {
+    screen: 'loading',
+    page: 'home',
+    token: null,
+    claims: null,
+    dashboardConfig: null,
+    sidebarOpen: false,
+    loginError: '',
+    loginLoading: false,
+
+    analytics: null,
+    analyticsPeriod: 'week',
+    services: [],
+    slots: [],
+    slotsDate: null,
+    staff: [],
+    staffDetail: null,
+    staffDetailPeriod: 'week',
+
+    modal: null,
+    toast: null,
+  };
+
+  var appEl = document.getElementById('app');
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function showToast(message, type) {
+    state.toast = { message: message, type: type || 'success' };
+    render();
+    setTimeout(function () { state.toast = null; render(); }, 3000);
+  }
+
+  function decodeJwt(token) {
+    try {
+      var payload = token.split('.')[1];
+      var json = decodeURIComponent(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+        .split('').map(function (c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join(''));
+      return JSON.parse(json);
+    } catch (e) { return null; }
+  }
+
+  function fmtMoney(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function fmtDateTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  }
+  function todayIso() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function apiFetch(path, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+
+    return fetch(API_BASE + path, Object.assign({}, options, { headers: headers }))
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; }).then(function (data) {
+          if (!resp.ok) {
+            var err = new Error(data.detail || ('Request failed (' + resp.status + ')'));
+            err.status = resp.status;
+            throw err;
+          }
+          return data;
+        });
+      });
+  }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    state.token = null;
+    state.claims = null;
+    state.dashboardConfig = null;
+    state.screen = 'login';
+    render();
+  }
+
+  function boot() {
+    var saved = localStorage.getItem(TOKEN_KEY);
+    if (!saved) { state.screen = 'login'; render(); return; }
+    state.token = saved;
+    state.claims = decodeJwt(saved);
+    if (!state.claims) { logout(); return; }
+    loadDashboardConfig().then(function () {
+      state.screen = 'dashboard';
+      state.page = 'home';
+      render();
+      loadPageData('home');
+    }).catch(function () { logout(); });
+  }
+
+  function loadDashboardConfig() {
+    return apiFetch('/api/v1/dashboard-config?client_id=' + encodeURIComponent(state.claims.client_id))
+      .then(function (data) { state.dashboardConfig = data; });
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    var clientId = document.getElementById('login-client-id').value.trim();
+    var email    = document.getElementById('login-email').value.trim();
+    var password = document.getElementById('login-password').value;
+
+    if (!clientId || !email || !password) {
+      state.loginError = 'Please fill in all fields.';
+      render();
+      return;
+    }
+
+    state.loginLoading = true;
+    state.loginError = '';
+    render();
+
+    fetch(API_BASE + '/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, email: email, password: password }),
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Login failed.');
+          return data;
+        });
+      })
+      .then(function (data) {
+        state.token = data.access_token;
+        state.claims = decodeJwt(data.access_token);
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+        return loadDashboardConfig();
+      })
+      .then(function () {
+        state.loginLoading = false;
+        state.screen = 'dashboard';
+        state.page = 'home';
+        render();
+        loadPageData('home');
+      })
+      .catch(function (err) {
+        state.loginLoading = false;
+        state.loginError = err.message;
+        render();
+      });
+  }
+
+  function renderLogin() {
+    return (
+      '<div class="screen-center"><div class="login-wrap">' +
+        '<div class="login-logo">' +
+          '<div class="logo-badge display">S</div>' +
+          '<div class="display login-title">Saarthi-AI</div>' +
+          '<div class="login-sub">Vendor Dashboard</div>' +
+        '</div>' +
+        (state.loginError ? '<div class="error-banner">' + escapeHtml(state.loginError) + '</div>' : '') +
+        '<form id="login-form">' +
+          '<label class="field-label">Business ID</label>' +
+          '<input id="login-client-id" class="field-input" type="text" placeholder="Your Saarthi Client ID" autocomplete="off" />' +
+          '<label class="field-label">Email</label>' +
+          '<input id="login-email" class="field-input" type="email" placeholder="you@example.com" autocomplete="username" />' +
+          '<label class="field-label">Password</label>' +
+          '<input id="login-password" class="field-input" type="password" placeholder="••••••••" autocomplete="current-password" />' +
+          '<button type="submit" class="btn-primary" ' + (state.loginLoading ? 'disabled' : '') + '>' +
+            (state.loginLoading ? '<span class="spinner-sm"></span>' : 'Log In') +
+          '</button>' +
+        '</form>' +
+      '</div></div>'
+    );
+  }
+
+  function getNavItems() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    return [
+      { id: 'home',     icon: '📊', label: 'Dashboard' },
+      { id: 'services', icon: '🧾', label: cfg.service_label || 'Services' },
+      { id: 'slots',    icon: cfg.slot_screen_type === 'table_grid' ? '🍽️' : '🗓️', label: cfg.slot_label || 'Slots' },
+      { id: 'staff',    icon: '👥', label: cfg.staff_label || 'Staff' },
+      { id: 'settings', icon: '⚙️', label: 'Settings' },
+    ];
+  }
+
+  function navigateTo(page) {
+    state.page = page;
+    state.sidebarOpen = false;
+    state.staffDetail = null;
+    render();
+    loadPageData(page);
+  }
+
+  function loadPageData(page) {
+    if (page === 'home') loadHomeData();
+    else if (page === 'services') loadServices();
+    else if (page === 'slots') {
+      if (!state.slotsDate) state.slotsDate = todayIso();
+      loadSlots();
+    }
+    else if (page === 'staff') loadStaff();
+  }
+
+  function renderShell() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var bizName = (state.dashboardConfig || {}).business_name || '';
+    var navItems = getNavItems();
+    var isAdmin = state.claims.role === 'admin';
+
+    var navHtml = navItems.map(function (item) {
+      var active = state.page === item.id || (state.page === 'staffDetail' && item.id === 'staff');
+      return '<button class="nav-item ' + (active ? 'active' : '') + '" data-nav="' + item.id + '">' +
+        '<span class="nav-icon">' + item.icon + '</span>' + escapeHtml(item.label) +
+      '</button>';
+    }).join('');
+
+    var html =
+      '<div class="shell">' +
+        '<div class="sidebar-overlay ' + (state.sidebarOpen ? 'show' : '') + '" id="sidebar-overlay"></div>' +
+        '<div class="sidebar ' + (state.sidebarOpen ? 'open' : '') + '" id="sidebar">' +
+          '<div class="sidebar-header">' +
+            '<div class="logo-badge display" style="width:38px;height:38px;font-size:17px;border-radius:11px">' +
+              (cfg.icon || 'S') +
+            '</div>' +
+            '<div style="min-width:0">' +
+              '<div class="sidebar-biz-name">' + escapeHtml(bizName) + '</div>' +
+              '<div class="sidebar-biz-type">' + escapeHtml(cfg.display_name || '') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="sidebar-nav">' + navHtml + '</div>' +
+          '<div class="sidebar-footer">' +
+            '<button class="btn-secondary" style="width:100%" id="logout-btn">Log Out</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="main-content">' +
+          '<div class="topbar">' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<button class="mobile-menu-btn" id="mobile-menu-btn">☰</button>' +
+              '<div class="topbar-title">' + getPageTitle() + '</div>' +
+            '</div>' +
+            '<div class="badge ' + (isAdmin ? 'admin' : 'staff') + '">' + (isAdmin ? 'ADMIN' : 'STAFF') + '</div>' +
+          '</div>' +
+          '<div class="page-body" id="page-body">' + renderCurrentPage() + '</div>' +
+        '</div>' +
+      '</div>' +
+      (state.toast ? renderToast() : '') +
+      (state.modal ? renderModal() : '');
+
+    appEl.innerHTML = html;
+
+    document.getElementById('logout-btn').addEventListener('click', logout);
+    document.getElementById('mobile-menu-btn').addEventListener('click', function () { state.sidebarOpen = true; render(); });
+    var overlay = document.getElementById('sidebar-overlay');
+    if (overlay) overlay.addEventListener('click', function () { state.sidebarOpen = false; render(); });
+    document.querySelectorAll('[data-nav]').forEach(function (btn) {
+      btn.addEventListener('click', function () { navigateTo(btn.getAttribute('data-nav')); });
+    });
+
+    attachCurrentPageHandlers();
+    attachModalHandlers();
+  }
+
+  function getPageTitle() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var titles = {
+      home: 'Dashboard',
+      services: cfg.service_label || 'Services',
+      slots: cfg.slot_label || 'Slots',
+      staff: cfg.staff_label || 'Staff',
+      staffDetail: state.staffDetail ? state.staffDetail.staff_name : (cfg.staff_label_singular || 'Staff'),
+      settings: 'Settings',
+    };
+    return escapeHtml(titles[state.page] || '');
+  }
+
+  function renderToast() {
+    return '<div class="toast ' + state.toast.type + '">' + escapeHtml(state.toast.message) + '</div>';
+  }
+
+  function renderCurrentPage() {
+    if (state.page === 'home') return renderHomePage();
+    if (state.page === 'services') return renderServicesPage();
+    if (state.page === 'slots') return renderSlotsPage();
+    if (state.page === 'staff') return renderStaffPage();
+    if (state.page === 'staffDetail') return renderStaffDetailPage();
+    if (state.page === 'settings') return renderSettingsPage();
+    return '';
+  }
+
+  function attachCurrentPageHandlers() {
+    if (state.page === 'home') attachHomeHandlers();
+    else if (state.page === 'services') attachServicesHandlers();
+    else if (state.page === 'slots') attachSlotsHandlers();
+    else if (state.page === 'staff') attachStaffHandlers();
+    else if (state.page === 'staffDetail') attachStaffDetailHandlers();
+    else if (state.page === 'settings') attachSettingsHandlers();
+  }
+
+  function refreshPageBodyOnly() {
+    var body = document.getElementById('page-body');
+    if (!body) { render(); return; }
+    body.innerHTML = renderCurrentPage();
+    attachCurrentPageHandlers();
+  }
+
+  function statCard(label, value, icon) {
+    return '<div class="stat-card">' +
+      '<div class="stat-label"><span>' + escapeHtml(label) + '</span><span class="stat-icon">' + icon + '</span></div>' +
+      '<div class="stat-value display">' + value + '</div>' +
+    '</div>';
+  }
+
+  function loadHomeData() {
+    apiFetch('/api/v1/analytics?client_id=' + state.claims.client_id + '&period=' + state.analyticsPeriod)
+      .then(function (data) { state.analytics = data; if (state.page === 'home') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderHomePage() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var bookingNoun = cfg.booking_noun || 'booking';
+    var bookingNounPlural = bookingNoun + (bookingNoun.charAt(bookingNoun.length - 1) === 's' ? '' : 's');
+    var a = state.analytics;
+
+    var periodChips = ['week', 'month', 'year'].map(function (p) {
+      return '<button class="chip ' + (state.analyticsPeriod === p ? 'active' : '') + '" data-period="' + p + '">' +
+        p.charAt(0).toUpperCase() + p.slice(1) + '</button>';
+    }).join('');
+
+    if (!a) {
+      return '<div class="chip-row">' + periodChips + '</div><div class="card"><div class="empty-block"><div class="spinner" style="margin:0 auto"></div></div></div>';
+    }
+
+    var avgPerBooking = a.total_bookings ? Math.round(a.total_revenue / a.total_bookings) : 0;
+    var bnCap = bookingNounPlural.charAt(0).toUpperCase() + bookingNounPlural.slice(1);
+
+    var html = '<div class="chip-row">' + periodChips + '</div>';
+    html += '<div class="stat-grid">' +
+      statCard('Total Revenue', fmtMoney(a.total_revenue), '💰') +
+      statCard('Total ' + bnCap, a.total_bookings, '📋') +
+      statCard('Avg per ' + bookingNoun, fmtMoney(avgPerBooking), '📈') +
+      statCard((cfg.staff_label || 'Staff') + ' Active', (a.staff_performance || []).length, '👤') +
+    '</div>';
+
+    html += '<div class="card" style="margin-bottom:20px">' +
+      '<div class="section-head"><div><div class="section-title">Revenue Trend</div>' +
+      '<div class="section-sub">Daily breakdown for this ' + state.analyticsPeriod + '</div></div></div>';
+
+    if (!a.daily_revenue || a.daily_revenue.length === 0) {
+      html += '<div class="empty-block">No revenue data yet for this period.</div>';
+    } else {
+      var maxRev = Math.max.apply(null, a.daily_revenue.map(function (d) { return d.total_revenue; }));
+      html += '<div style="display:flex;flex-direction:column;gap:10px">';
+      a.daily_revenue.forEach(function (d) {
+        var pct = maxRev > 0 ? Math.round((d.total_revenue / maxRev) * 100) : 0;
+        html += '<div style="display:flex;align-items:center;gap:12px">' +
+          '<div style="width:70px;font-size:11.5px;color:var(--text-mute);flex-shrink:0">' + fmtDate(d.date) + '</div>' +
+          '<div style="flex:1;background:var(--surface-hi);border-radius:6px;height:22px;position:relative;overflow:hidden">' +
+            '<div style="position:absolute;inset:0;width:' + pct + '%;background:linear-gradient(90deg,var(--purple),var(--purple-lt));border-radius:6px"></div>' +
+          '</div>' +
+          '<div style="width:70px;text-align:right;font-size:12.5px;font-weight:600;flex-shrink:0">' + fmtMoney(d.total_revenue) + '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    html += '<div class="card">' +
+      '<div class="section-head"><div><div class="section-title">' + escapeHtml(cfg.staff_label || 'Staff') + ' Performance</div>' +
+      '<div class="section-sub">Click a name to see individual sales</div></div></div>';
+
+    if (!a.staff_performance || a.staff_performance.length === 0) {
+      html += '<div class="empty-block">No ' + escapeHtml((cfg.staff_label || 'staff').toLowerCase()) + ' sales recorded yet.</div>';
+    } else {
+      html += '<table class="data-table"><thead><tr><th>' + escapeHtml(cfg.staff_label_singular || 'Name') + '</th><th>' + bnCap + '</th><th>Revenue</th></tr></thead><tbody>';
+      a.staff_performance.forEach(function (s, i) {
+        html += '<tr style="cursor:pointer" data-staff-row="' + escapeHtml(s.staff_name) + '">' +
+          '<td><strong>' + (i === 0 ? '🏆 ' : '') + escapeHtml(s.staff_name) + '</strong></td>' +
+          '<td>' + s.booking_count + '</td>' +
+          '<td>' + fmtMoney(s.revenue) + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function attachHomeHandlers() {
+    document.querySelectorAll('[data-period]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.analyticsPeriod = btn.getAttribute('data-period');
+        refreshPageBodyOnly();
+        loadHomeData();
+      });
+    });
+    document.querySelectorAll('[data-staff-row]').forEach(function (row) {
+      row.addEventListener('click', function () { openStaffDetail(row.getAttribute('data-staff-row')); });
+    });
+  }
+
+  function openStaffDetail(staffName) {
+    state.page = 'staffDetail';
+    state.staffDetailPeriod = 'week';
+    state.staffDetail = null;
+    render();
+    loadStaffDetail(staffName);
+  }
+
+  function loadStaffDetail(staffName) {
+    apiFetch('/api/v1/analytics/staff/' + encodeURIComponent(staffName) + '?client_id=' + state.claims.client_id + '&period=' + state.staffDetailPeriod)
+      .then(function (data) { state.staffDetail = data; if (state.page === 'staffDetail') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderStaffDetailPage() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var d = state.staffDetail;
+    var periodChips = ['week', 'month', 'year'].map(function (p) {
+      return '<button class="chip ' + (state.staffDetailPeriod === p ? 'active' : '') + '" data-sd-period="' + p + '">' +
+        p.charAt(0).toUpperCase() + p.slice(1) + '</button>';
+    }).join('');
+
+    var html = '<button class="btn-secondary" id="back-to-staff" style="margin-bottom:16px">← Back to ' + escapeHtml(cfg.staff_label || 'Staff') + '</button>';
+    html += '<div class="chip-row">' + periodChips + '</div>';
+
+    if (!d) {
+      return html + '<div class="card"><div class="empty-block"><div class="spinner" style="margin:0 auto"></div></div></div>';
+    }
+
+    html += '<div class="stat-grid" style="grid-template-columns:repeat(2,1fr)">' +
+      statCard('Total Revenue', fmtMoney(d.total_revenue), '💰') +
+      statCard('Total Bookings', d.total_bookings, '📋') +
+    '</div>';
+
+    html += '<div class="card"><div class="section-head"><div class="section-title">Booking History</div></div>';
+    if (!d.bookings || d.bookings.length === 0) {
+      html += '<div class="empty-block">No bookings found for this period.</div>';
+    } else {
+      html += '<table class="data-table"><thead><tr><th>Date</th><th>Service</th><th>Customer</th><th>Amount</th></tr></thead><tbody>';
+      d.bookings.forEach(function (b) {
+        html += '<tr>' +
+          '<td>' + fmtDateTime(b.slot_datetime) + '</td>' +
+          '<td>' + escapeHtml(b.service_name) + '</td>' +
+          '<td>' + escapeHtml(b.customer_phone) + '</td>' +
+          '<td>' + fmtMoney(b.price) + '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function attachStaffDetailHandlers() {
+    var backBtn = document.getElementById('back-to-staff');
+    if (backBtn) backBtn.addEventListener('click', function () { navigateTo('staff'); });
+    document.querySelectorAll('[data-sd-period]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.staffDetailPeriod = btn.getAttribute('data-sd-period');
+        refreshPageBodyOnly();
+        loadStaffDetail(state.staffDetail.staff_name);
+      });
+    });
+  }
+
+  function loadServices() {
+    apiFetch('/api/v1/services?client_id=' + state.claims.client_id)
+      .then(function (data) { state.services = data.services || []; if (state.page === 'services') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderServicesPage() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var singular = cfg.service_label_singular || 'Service';
+    var plural = cfg.service_label || 'Services';
+    var isAdmin = state.claims.role === 'admin';
+
+    var grouped = {};
+    state.services.forEach(function (s) {
+      var cat = s.category || 'general';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(s);
+    });
+
+    var html = '<div class="section-head">' +
+      '<div><div class="section-title">' + escapeHtml(plural) + '</div>' +
+      '<div class="section-sub">Manage what customers can book on WhatsApp</div></div>' +
+      (isAdmin ? '<button class="btn-primary" style="width:auto;padding:10px 18px" id="add-service-btn">+ Add ' + escapeHtml(singular) + '</button>' : '') +
+    '</div>';
+
+    if (state.services.length === 0) {
+      html += '<div class="card"><div class="empty-block">No ' + escapeHtml(plural.toLowerCase()) + ' added yet.' +
+        (isAdmin ? '<br><br><button class="btn-secondary" id="add-service-empty-btn">+ Add your first ' + escapeHtml(singular.toLowerCase()) + '</button>' : '') +
+      '</div></div>';
+      return html;
+    }
+
+    Object.keys(grouped).forEach(function (cat) {
+      html += '<div class="card" style="margin-bottom:14px">' +
+        '<div style="font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-mute);margin-bottom:12px">' + escapeHtml(cat) + '</div>';
+      grouped[cat].forEach(function (s) {
+        var active = s.is_active !== false;
+        html += '<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-weight:600;font-size:14px">' + escapeHtml(s.name) +
+              (!active ? ' <span class="badge inactive" style="margin-left:6px">Inactive</span>' : '') + '</div>' +
+            '<div style="font-size:12px;color:var(--text-mute);margin-top:2px">' + (s.duration_min || 0) + ' min' +
+              (s.description ? ' · ' + escapeHtml(s.description) : '') + '</div>' +
+          '</div>' +
+          '<div class="display" style="font-weight:700;font-size:15px;flex-shrink:0">' + fmtMoney(s.price) + '</div>' +
+          (isAdmin ? (
+            '<div style="display:flex;gap:8px;flex-shrink:0;align-items:center">' +
+              '<label class="switch"><input type="checkbox" ' + (active ? 'checked' : '') + ' data-toggle-service="' + escapeHtml(s.service_id) + '" /><span class="switch-track"></span></label>' +
+              '<button class="icon-btn" data-edit-service="' + escapeHtml(s.service_id) + '">✎</button>' +
+            '</div>'
+          ) : '') +
+        '</div>';
+      });
+      html += '</div>';
+    });
+
+    return html;
+  }
+
+  function attachServicesHandlers() {
+    var addBtn = document.getElementById('add-service-btn') || document.getElementById('add-service-empty-btn');
+    if (addBtn) addBtn.addEventListener('click', function () { openServiceModal(null); });
+
+    document.querySelectorAll('[data-edit-service]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-edit-service');
+        var svc = state.services.find(function (s) { return s.service_id === id; });
+        openServiceModal(svc);
+      });
+    });
+
+    document.querySelectorAll('[data-toggle-service]').forEach(function (chk) {
+      chk.addEventListener('change', function () {
+        var id = chk.getAttribute('data-toggle-service');
+        apiFetch('/api/v1/services/' + id + '?client_id=' + state.claims.client_id, {
+          method: 'PATCH', body: JSON.stringify({ is_active: chk.checked }),
+        }).then(function () { showToast('Updated.', 'success'); loadServices(); })
+          .catch(function (err) { showToast(err.message, 'error'); chk.checked = !chk.checked; });
+      });
+    });
+  }
+
+  function openServiceModal(existing) {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    state.modal = {
+      type: 'service',
+      isEdit: !!existing,
+      service_id: existing ? existing.service_id : null,
+      name: existing ? existing.name : '',
+      price: existing ? existing.price : '',
+      duration_min: existing ? existing.duration_min : 30,
+      category: existing ? existing.category : ((cfg.default_categories && cfg.default_categories[0]) || 'general'),
+      description: existing ? existing.description : '',
+      error: '',
+      saving: false,
+    };
+    render();
+  }
+
+  function submitServiceModal() {
+    var m = state.modal;
+    var name = document.getElementById('svc-name').value.trim();
+    var price = parseInt(document.getElementById('svc-price').value, 10);
+    var duration = parseInt(document.getElementById('svc-duration').value, 10) || 30;
+    var category = document.getElementById('svc-category').value.trim() || 'general';
+    var description = document.getElementById('svc-description').value.trim();
+
+    if (!name) { m.error = 'Name is required.'; render(); return; }
+    if (!price || price <= 0) { m.error = 'Enter a valid price.'; render(); return; }
+
+    m.saving = true; m.error = '';
+    render();
+
+    var payload = { name: name, price: price, duration_min: duration, category: category, description: description };
+    var req = m.isEdit
+      ? apiFetch('/api/v1/services/' + m.service_id + '?client_id=' + state.claims.client_id, { method: 'PATCH', body: JSON.stringify(payload) })
+      : apiFetch('/api/v1/services?client_id=' + state.claims.client_id, { method: 'POST', body: JSON.stringify(payload) });
+
+    req.then(function () {
+      showToast(m.isEdit ? 'Updated successfully.' : 'Added successfully.', 'success');
+      state.modal = null;
+      render();
+      loadServices();
+    }).catch(function (err) {
+      m.saving = false; m.error = err.message;
+      render();
+    });
+  }
+
+  function loadSlots() {
+    apiFetch('/api/v1/slots?client_id=' + state.claims.client_id + '&date=' + state.slotsDate)
+      .then(function (data) { state.slots = data.slots || []; if (state.page === 'slots') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderSlotsPage() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var isAdmin = state.claims.role === 'admin';
+    var isTableMode = cfg.slot_screen_type === 'table_grid';
+    var label = cfg.slot_label || 'Slots';
+
+    var html = '<div class="section-head">' +
+      '<div><div class="section-title">' + escapeHtml(label) + '</div>' +
+      '<div class="section-sub">' + (isTableMode ? 'Manage table availability by time' : 'Manage ' + escapeHtml((cfg.staff_label || 'staff').toLowerCase()) + ' availability') + '</div></div>' +
+      '<div style="display:flex;gap:10px;align-items:center">' +
+        '<input type="date" class="field-input" style="margin:0;width:auto" id="slots-date-picker" value="' + state.slotsDate + '" />' +
+        (isAdmin ? '<button class="btn-primary" style="width:auto;padding:10px 18px" id="add-slots-btn">+ Add</button>' : '') +
+      '</div>' +
+    '</div>';
+
+    if (state.slots.length === 0) {
+      html += '<div class="card"><div class="empty-block">No ' + escapeHtml(label.toLowerCase()) + ' for this date.' +
+        (isAdmin ? '<br><br><button class="btn-secondary" id="add-slots-empty-btn">+ Add ' + escapeHtml(label.toLowerCase()) + '</button>' : '') +
+      '</div></div>';
+      return html;
+    }
+
+    var grouped = {};
+    state.slots.forEach(function (s) {
+      var key = s.staff_name || 'Unassigned';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(s);
+    });
+
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">';
+    Object.keys(grouped).sort().forEach(function (key) {
+      html += '<div class="card">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+          '<span style="font-size:16px">' + (isTableMode ? '🍽️' : '👤') + '</span>' +
+          '<span style="font-weight:700;font-size:14px">' + escapeHtml(key) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:8px">';
+      grouped[key].sort(function (a, b) { return new Date(a.slot_datetime) - new Date(b.slot_datetime); }).forEach(function (s) {
+        var statusColor = s.status === 'available' ? 'var(--green)' : (s.status === 'booked' ? 'var(--purple-lt)' : 'var(--gold)');
+        var statusLabel = s.status === 'available' ? 'Free' : (s.status === 'booked' ? 'Booked' : 'Pending');
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--surface-hi);border-radius:8px">' +
+          '<span style="font-size:13px;font-weight:600">' + fmtTime(s.slot_datetime) + '</span>' +
+          '<span style="font-size:11px;font-weight:600;color:' + statusColor + '">' + statusLabel + '</span>' +
+          (isAdmin && s.status === 'available' ? '<button class="icon-btn danger" style="width:24px;height:24px;font-size:11px" data-delete-slot="' + escapeHtml(s.slot_id) + '">✕</button>' : '<span style="width:24px"></span>') +
+        '</div>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function attachSlotsHandlers() {
+    var picker = document.getElementById('slots-date-picker');
+    if (picker) picker.addEventListener('change', function () { state.slotsDate = picker.value; loadSlots(); });
+
+    var addBtn = document.getElementById('add-slots-btn') || document.getElementById('add-slots-empty-btn');
+    if (addBtn) addBtn.addEventListener('click', openSlotsModal);
+
+    document.querySelectorAll('[data-delete-slot]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-delete-slot');
+        if (!confirm('Delete this slot?')) return;
+        apiFetch('/api/v1/slots/' + id + '?client_id=' + state.claims.client_id, { method: 'DELETE' })
+          .then(function () { showToast('Deleted.', 'success'); loadSlots(); })
+          .catch(function (err) { showToast(err.message, 'error'); });
+      });
+    });
+  }
+
+  function openSlotsModal() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    state.modal = {
+      type: 'slots',
+      isTableMode: cfg.slot_screen_type === 'table_grid',
+      error: '', saving: false,
+    };
+    render();
+  }
+
+  function submitSlotsModal() {
+    var m = state.modal;
+    var name = document.getElementById('slot-staff-name').value.trim();
+    var startTime = document.getElementById('slot-start').value;
+    var endTime = document.getElementById('slot-end').value;
+    var interval = parseInt(document.getElementById('slot-interval').value, 10) || 30;
+    var duration = parseInt(document.getElementById('slot-duration').value, 10) || 30;
+
+    if (!name) { m.error = (m.isTableMode ? 'Table name/number is required.' : 'Staff name is required.'); render(); return; }
+    if (!startTime || !endTime) { m.error = 'Start and end time are required.'; render(); return; }
+
+    var dateStr = state.slotsDate;
+    var slots = [];
+    var cur = new Date(dateStr + 'T' + startTime + ':00');
+    var end = new Date(dateStr + 'T' + endTime + ':00');
+    while (cur < end) {
+      slots.push({ staff_name: name, slot_datetime: cur.toISOString().slice(0, 19), duration_min: duration });
+      cur = new Date(cur.getTime() + interval * 60000);
+    }
+
+    if (slots.length === 0) { m.error = 'No slots generated — check your time range.'; render(); return; }
+
+    m.saving = true; m.error = '';
+    render();
+
+    apiFetch('/api/v1/slots?client_id=' + state.claims.client_id, {
+      method: 'POST', body: JSON.stringify({ slots: slots }),
+    }).then(function () {
+      showToast(slots.length + ' slots created.', 'success');
+      state.modal = null;
+      render();
+      loadSlots();
+    }).catch(function (err) {
+      m.saving = false; m.error = err.message;
+      render();
+    });
+  }
+
+  function loadStaff() {
+    apiFetch('/api/v1/auth/staff?client_id=' + state.claims.client_id)
+      .then(function (data) { state.staff = data.staff || []; if (state.page === 'staff') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderStaffPage() {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var label = cfg.staff_label || 'Staff';
+    var singular = cfg.staff_label_singular || 'Staff Member';
+    var isAdmin = state.claims.role === 'admin';
+
+    var html = '<div class="section-head">' +
+      '<div><div class="section-title">' + escapeHtml(label) + '</div>' +
+      '<div class="section-sub">Click a row to see individual sales</div></div>' +
+      (isAdmin ? '<button class="btn-primary" style="width:auto;padding:10px 18px" id="add-staff-btn">+ Add ' + escapeHtml(singular) + '</button>' : '') +
+    '</div>';
+
+    if (state.staff.length === 0) {
+      html += '<div class="card"><div class="empty-block">No ' + escapeHtml(label.toLowerCase()) + ' added yet.' +
+        (isAdmin ? '<br><br><button class="btn-secondary" id="add-staff-empty-btn">+ Add your first ' + escapeHtml(singular.toLowerCase()) + '</button>' : '') +
+      '</div></div>';
+      return html;
+    }
+
+    html += '<div class="card"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th>' + (isAdmin ? '<th></th>' : '') + '</tr></thead><tbody>';
+    state.staff.forEach(function (s) {
+      var active = s.is_active !== false;
+      var nameForSales = s.name || s.email || '';
+      html += '<tr>' +
+        '<td style="cursor:pointer" data-view-sales="' + escapeHtml(nameForSales) + '"><strong>' + escapeHtml(s.name || '—') + '</strong></td>' +
+        '<td style="cursor:pointer" data-view-sales="' + escapeHtml(nameForSales) + '">' + escapeHtml(s.email || '—') + '</td>' +
+        '<td style="cursor:pointer" data-view-sales="' + escapeHtml(nameForSales) + '"><span class="badge ' + (s.role === 'admin' ? 'admin' : 'staff') + '">' + (s.role || 'staff').toUpperCase() + '</span></td>' +
+        '<td style="cursor:pointer" data-view-sales="' + escapeHtml(nameForSales) + '"><span class="badge ' + (active ? 'active' : 'inactive') + '">' + (active ? 'Active' : 'Disabled') + '</span></td>' +
+        (isAdmin ? ('<td><label class="switch"><input type="checkbox" ' + (active ? 'checked' : '') + ' data-toggle-staff="' + escapeHtml(s._id || s.user_id || '') + '" /><span class="switch-track"></span></label></td>') : '') +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function attachStaffHandlers() {
+    var addBtn = document.getElementById('add-staff-btn') || document.getElementById('add-staff-empty-btn');
+    if (addBtn) addBtn.addEventListener('click', openStaffModal);
+
+    document.querySelectorAll('[data-toggle-staff]').forEach(function (chk) {
+      chk.addEventListener('click', function (e) { e.stopPropagation(); });
+      chk.addEventListener('change', function (e) {
+        e.stopPropagation();
+        var id = chk.getAttribute('data-toggle-staff');
+        apiFetch('/api/v1/auth/staff/' + id, {
+          method: 'PATCH', body: JSON.stringify({ client_id: state.claims.client_id, is_active: chk.checked }),
+        }).then(function () { showToast('Updated.', 'success'); loadStaff(); })
+          .catch(function (err) { showToast(err.message, 'error'); chk.checked = !chk.checked; });
+      });
+    });
+
+    document.querySelectorAll('[data-view-sales]').forEach(function (cell) {
+      cell.addEventListener('click', function () { openStaffDetail(cell.getAttribute('data-view-sales')); });
+    });
+  }
+
+  function openStaffModal() {
+    state.modal = { type: 'staff', error: '', saving: false };
+    render();
+  }
+
+  function submitStaffModal() {
+    var m = state.modal;
+    var name = document.getElementById('staff-name').value.trim();
+    var email = document.getElementById('staff-email').value.trim();
+    var password = document.getElementById('staff-password').value;
+    var roleEl = document.querySelector('input[name="staff-role"]:checked');
+    var role = roleEl ? roleEl.value : 'staff';
+
+    if (!name || !email || !password) { m.error = 'All fields are required.'; render(); return; }
+    if (password.length < 6) { m.error = 'Password must be at least 6 characters.'; render(); return; }
+
+    m.saving = true; m.error = '';
+    render();
+
+    apiFetch('/api/v1/auth/create-staff', {
+      method: 'POST',
+      body: JSON.stringify({ client_id: state.claims.client_id, name: name, email: email, password: password, role: role }),
+    }).then(function () {
+      showToast('Added successfully.', 'success');
+      state.modal = null;
+      render();
+      loadStaff();
+    }).catch(function (err) {
+      m.saving = false; m.error = err.message;
+      render();
+    });
+  }
+
+  function renderSettingsPage() {
+    var cfg = state.dashboardConfig || {};
+    var vcfg = cfg.config || {};
+
+    var html = '<div class="card" style="margin-bottom:16px">' +
+      '<div class="section-title" style="margin-bottom:14px">Business Profile</div>' +
+      settingsRow('Business Name', cfg.business_name) +
+      settingsRow('Business Type', vcfg.display_name) +
+      settingsRow('City', cfg.city) +
+      settingsRow('Plan', (cfg.plan || '').toUpperCase()) +
+      settingsRow('Status', (cfg.status || '').toUpperCase()) +
+    '</div>';
+
+    if (cfg.qr_code_url) {
+      html += '<div class="card" style="margin-bottom:16px">' +
+        '<div class="section-title" style="margin-bottom:14px">Your Customer QR Code</div>' +
+        '<div class="section-sub" style="margin-bottom:14px">Customers scan this to start booking on WhatsApp</div>' +
+        '<img src="' + escapeHtml(cfg.qr_code_url) + '" style="max-width:220px;border-radius:12px;border:1px solid var(--border)" />' +
+      '</div>';
+    }
+
+    html += '<div class="card"><div class="section-title" style="margin-bottom:14px">Account</div>' +
+      '<button class="btn-secondary btn-danger" id="settings-logout-btn">Log Out</button></div>';
+
+    return html;
+  }
+
+  function settingsRow(label, value) {
+    return '<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13.5px">' +
+      '<span style="color:var(--text-mute)">' + escapeHtml(label) + '</span>' +
+      '<span style="font-weight:600">' + escapeHtml(value || '—') + '</span>' +
+    '</div>';
+  }
+
+  function attachSettingsHandlers() {
+    var btn = document.getElementById('settings-logout-btn');
+    if (btn) btn.addEventListener('click', logout);
+  }
+
+  function renderModal() {
+    var m = state.modal;
+    if (m.type === 'service') return renderServiceModal(m);
+    if (m.type === 'slots') return renderSlotsModalHtml(m);
+    if (m.type === 'staff') return renderStaffModalHtml(m);
+    return '';
+  }
+
+  function renderServiceModal(m) {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var singular = cfg.service_label_singular || 'Service';
+    return '<div class="modal-overlay" id="modal-overlay">' +
+      '<div class="modal-box">' +
+        '<div class="modal-title">' + (m.isEdit ? 'Edit' : 'Add') + ' ' + escapeHtml(singular) + '</div>' +
+        '<div class="modal-sub">Customers will see this on the booking page</div>' +
+        (m.error ? '<div class="error-banner">' + escapeHtml(m.error) + '</div>' : '') +
+        '<div class="form-row"><label class="field-label">Name</label>' +
+          '<input id="svc-name" class="field-input" style="margin:0" value="' + escapeHtml(m.name) + '" placeholder="e.g. Haircut" /></div>' +
+        '<div class="form-row form-row-split">' +
+          '<div><label class="field-label">Price (₹)</label>' +
+            '<input id="svc-price" class="field-input" style="margin:0" type="number" value="' + escapeHtml(m.price) + '" placeholder="200" /></div>' +
+          '<div><label class="field-label">Duration (min)</label>' +
+            '<input id="svc-duration" class="field-input" style="margin:0" type="number" value="' + escapeHtml(m.duration_min) + '" placeholder="30" /></div>' +
+        '</div>' +
+        '<div class="form-row"><label class="field-label">Category</label>' +
+          '<input id="svc-category" class="field-input" style="margin:0" value="' + escapeHtml(m.category) + '" placeholder="e.g. hair" /></div>' +
+        '<div class="form-row"><label class="field-label">Description (optional)</label>' +
+          '<input id="svc-description" class="field-input" style="margin:0" value="' + escapeHtml(m.description) + '" placeholder="Short description" /></div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-secondary" id="modal-cancel">Cancel</button>' +
+          '<button class="btn-primary" id="modal-submit" ' + (m.saving ? 'disabled' : '') + '>' +
+            (m.saving ? '<span class="spinner-sm"></span>' : (m.isEdit ? 'Save Changes' : 'Add ' + escapeHtml(singular))) +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderSlotsModalHtml(m) {
+    var noun = m.isTableMode ? 'Table' : 'Staff';
+    return '<div class="modal-overlay" id="modal-overlay">' +
+      '<div class="modal-box">' +
+        '<div class="modal-title">Add Slots</div>' +
+        '<div class="modal-sub">Generates slots every interval between start and end time for ' + escapeHtml(state.slotsDate) + '</div>' +
+        (m.error ? '<div class="error-banner">' + escapeHtml(m.error) + '</div>' : '') +
+        '<div class="form-row"><label class="field-label">' + noun + ' Name' + (m.isTableMode ? '/Number' : '') + '</label>' +
+          '<input id="slot-staff-name" class="field-input" style="margin:0" placeholder="' + (m.isTableMode ? 'e.g. Table 1' : 'e.g. Rahul') + '" /></div>' +
+        '<div class="form-row form-row-split">' +
+          '<div><label class="field-label">Start Time</label><input id="slot-start" class="field-input" style="margin:0" type="time" value="10:00" /></div>' +
+          '<div><label class="field-label">End Time</label><input id="slot-end" class="field-input" style="margin:0" type="time" value="18:00" /></div>' +
+        '</div>' +
+        '<div class="form-row form-row-split">' +
+          '<div><label class="field-label">Interval (min)</label><input id="slot-interval" class="field-input" style="margin:0" type="number" value="30" /></div>' +
+          '<div><label class="field-label">Duration (min)</label><input id="slot-duration" class="field-input" style="margin:0" type="number" value="30" /></div>' +
+        '</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-secondary" id="modal-cancel">Cancel</button>' +
+          '<button class="btn-primary" id="modal-submit" ' + (m.saving ? 'disabled' : '') + '>' +
+            (m.saving ? '<span class="spinner-sm"></span>' : 'Create Slots') +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderStaffModalHtml(m) {
+    var cfg = (state.dashboardConfig || {}).config || {};
+    var singular = cfg.staff_label_singular || 'Staff Member';
+    return '<div class="modal-overlay" id="modal-overlay">' +
+      '<div class="modal-box">' +
+        '<div class="modal-title">Add ' + escapeHtml(singular) + '</div>' +
+        '<div class="modal-sub">They will be able to log in to this dashboard</div>' +
+        (m.error ? '<div class="error-banner">' + escapeHtml(m.error) + '</div>' : '') +
+        '<div class="form-row"><label class="field-label">Name</label>' +
+          '<input id="staff-name" class="field-input" style="margin:0" placeholder="Full name" /></div>' +
+        '<div class="form-row"><label class="field-label">Email</label>' +
+          '<input id="staff-email" class="field-input" style="margin:0" type="email" placeholder="email@example.com" /></div>' +
+        '<div class="form-row"><label class="field-label">Password</label>' +
+          '<input id="staff-password" class="field-input" style="margin:0" type="password" placeholder="At least 6 characters" /></div>' +
+        '<div class="radio-row">' +
+          '<label class="radio-opt"><input type="radio" name="staff-role" value="staff" checked /> Staff</label>' +
+          '<label class="radio-opt"><input type="radio" name="staff-role" value="admin" /> Admin</label>' +
+        '</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-secondary" id="modal-cancel">Cancel</button>' +
+          '<button class="btn-primary" id="modal-submit" ' + (m.saving ? 'disabled' : '') + '>' +
+            (m.saving ? '<span class="spinner-sm"></span>' : 'Add ' + escapeHtml(singular)) +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function attachModalHandlers() {
+    var overlay = document.getElementById('modal-overlay');
+    if (!overlay) return;
+
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) { state.modal = null; render(); }
+    });
+
+    var cancelBtn = document.getElementById('modal-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { state.modal = null; render(); });
+
+    var submitBtn = document.getElementById('modal-submit');
+    if (submitBtn) submitBtn.addEventListener('click', function () {
+      if (state.modal.type === 'service') submitServiceModal();
+      else if (state.modal.type === 'slots') submitSlotsModal();
+      else if (state.modal.type === 'staff') submitStaffModal();
+    });
+  }
+
+  function render() {
+    if (state.screen === 'loading') {
+      appEl.innerHTML = '<div class="screen-center"><div class="spinner"></div></div>';
+      return;
+    }
+    if (state.screen === 'login') {
+      appEl.innerHTML = renderLogin();
+      var form = document.getElementById('login-form');
+      if (form) form.addEventListener('submit', handleLogin);
+      return;
+    }
+    if (state.screen === 'dashboard') {
+      renderShell();
+      return;
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
