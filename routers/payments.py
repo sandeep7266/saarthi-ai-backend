@@ -220,7 +220,7 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
     # (they can swap it once their dedicated business number is live).
     from utils.qr_generator import generate_client_qr
 
-    qr_target_number = client_data.get("whatsapp_phone_id_number") or owner_phone
+    qr_target_number = client_data.get("whatsapp_business_number") or owner_phone
     qr_url = ""
     if qr_target_number:
         qr_url = generate_client_qr(

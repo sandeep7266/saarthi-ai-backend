@@ -1066,6 +1066,24 @@
       '</div>';
     }
 
+    var hasOwnNumber = !!cfg.whatsapp_business_number;
+    html += '<div class="card" style="margin-bottom:16px">' +
+      '<div class="section-title" style="margin-bottom:6px">WhatsApp Business Number</div>' +
+      '<div class="section-sub" style="margin-bottom:14px">' +
+        (hasOwnNumber
+          ? 'Your own number is connected. Customers message you directly here.'
+          : 'Your QR currently points to your personal number as a fallback. Connect your own Meta WhatsApp Business number once it\'s ready.') +
+      '</div>' +
+      (state.connectWa && state.connectWa.error ? '<div class="error-banner">' + escapeHtml(state.connectWa.error) + '</div>' : '') +
+      '<div class="form-row"><label class="field-label">Meta Phone Number ID</label>' +
+        '<input id="wa-phone-id" class="field-input" style="margin:0" placeholder="e.g. 123456789012345" value="' + escapeHtml(cfg.whatsapp_phone_id || '') + '" /></div>' +
+      '<div class="form-row"><label class="field-label">Business WhatsApp Number</label>' +
+        '<input id="wa-business-number" class="field-input" style="margin:0" placeholder="e.g. +919876543210" value="' + escapeHtml(cfg.whatsapp_business_number || '') + '" /></div>' +
+      '<button class="btn-primary" id="settings-connect-wa-btn" ' + (state.connectWa && state.connectWa.saving ? 'disabled' : '') + '>' +
+        (state.connectWa && state.connectWa.saving ? '<span class="spinner-sm"></span>' : (hasOwnNumber ? 'Update Number' : 'Connect Number')) +
+      '</button>' +
+    '</div>';
+
     html += '<div class="card"><div class="section-title" style="margin-bottom:14px">Account</div>' +
       '<button class="btn-secondary btn-danger" id="settings-logout-btn">Log Out</button></div>';
 
@@ -1082,6 +1100,40 @@
   function attachSettingsHandlers() {
     var btn = document.getElementById('settings-logout-btn');
     if (btn) btn.addEventListener('click', logout);
+
+    var connectBtn = document.getElementById('settings-connect-wa-btn');
+    if (connectBtn) connectBtn.addEventListener('click', submitConnectWhatsapp);
+  }
+
+  function submitConnectWhatsapp() {
+    var phoneId = (document.getElementById('wa-phone-id').value || '').trim();
+    var businessNumber = (document.getElementById('wa-business-number').value || '').trim();
+
+    if (!phoneId || !businessNumber) {
+      state.connectWa = { error: 'Both fields are required.' };
+      render();
+      return;
+    }
+
+    state.connectWa = { saving: true, error: '' };
+    render();
+
+    apiFetch('/api/v1/onboard/' + encodeURIComponent(state.claims.client_id) + '/connect-whatsapp', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        whatsapp_phone_id: phoneId,
+        whatsapp_business_number: businessNumber,
+      }),
+    }).then(function () {
+      showToast('WhatsApp number connected. QR updated.', 'success');
+      state.connectWa = { saving: false, error: '' };
+      return loadDashboardConfig();
+    }).then(function () {
+      render();
+    }).catch(function (err) {
+      state.connectWa = { saving: false, error: err.message };
+      render();
+    });
   }
 
   function renderModal() {

@@ -165,6 +165,7 @@ async def _create_pending_vendor_core(body: OnboardRequest) -> OnboardResponse:
         "plan"                 : body.plan.value,
         "billing_cycle"        : body.billing_cycle.value,
         "whatsapp_phone_id"    : body.whatsapp_phone_id,
+        "whatsapp_business_number": "",  # E.164 dialable number for QR (set later via /connect-whatsapp)
         "status"               : "inactive",
         "razorpay_sub_id"      : None,
         "razorpay_payment_link_id": None,
@@ -264,3 +265,59 @@ async def _create_pending_vendor_core(body: OnboardRequest) -> OnboardResponse:
             "Complete payment to activate your Saarthi-AI subscription."
         ),
     )
+
+
+# ── Connect Client's Own WhatsApp Business Number ──────────────────────────────
+
+class ConnectWhatsAppRequest(BaseModel):
+    whatsapp_phone_id: str = Field(..., description="Meta WhatsApp Cloud API Phone Number ID (used for sending/receiving via API)")
+    whatsapp_business_number: str = Field(..., description="Actual E.164 dialable number linked to that Phone Number ID, e.g. +919876543210 (used for the customer-facing QR code)")
+
+
+@router.patch(
+    "/{client_id}/connect-whatsapp",
+    summary="Connect the client's own Meta WhatsApp Business number",
+    description=(
+        "Called once a client has registered their own number with Meta "
+        "(post-onboarding). Updates the tenant's routing ID (whatsapp_phone_id) "
+        "and the dialable number used for their QR code, then regenerates the "
+        "QR code to point at their own number instead of the fallback owner_phone."
+    ),
+)
+async def connect_whatsapp_number(client_id: str, body: ConnectWhatsAppRequest):
+    db = get_db()
+    client_ref = db.collection(Collections.CLIENTS).document(client_id)
+    client_doc = client_ref.get()
+
+    if not client_doc.exists:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    client_data = client_doc.to_dict()
+
+    client_ref.update({
+        "whatsapp_phone_id"        : body.whatsapp_phone_id,
+        "whatsapp_business_number" : body.whatsapp_business_number,
+        "updated_at"               : datetime.now(timezone.utc),
+    })
+
+    # ── Regenerate QR so it now points at the client's own number ──────────────
+    from utils.qr_generator import generate_client_qr
+
+    qr_url = ""
+    try:
+        qr_url = generate_client_qr(
+            client_id=client_id,
+            business_name=client_data.get("business_name", ""),
+            whatsapp_number=body.whatsapp_business_number,
+        )
+        if qr_url:
+            client_ref.update({"qr_code_url": qr_url})
+    except Exception as e:
+        logger.error("QR regeneration failed for client %s: %s", client_id, e)
+
+    return {
+        "success": True,
+        "client_id": client_id,
+        "qr_code_url": qr_url,
+        "message": "WhatsApp number connected. QR code updated to point at your business number.",
+    }

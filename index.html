@@ -1,855 +1,557 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Saarthi-AI — AI Receptionist for Indian Businesses</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet" />
-  <style>
-    :root {
-      --brand-purple: #7C3AED;
-      --brand-deep:   #4C1D95;
-      --brand-red:    #DC2626;
-      --brand-gold:   #F59E0B;
-      --bg-ink:       #0D0B1A;
-      --bg-card:      #13102A;
-      --bg-border:    #2A2550;
-    }
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Space Grotesk', sans-serif;
-      background: var(--bg-ink);
-      color: #E5E0FF;
-      overflow-x: hidden;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Saarthi-AI — AI WhatsApp Receptionist for Salons, Clinics, Cafes & More</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0D0B1A; --surface: #13102A; --surface-hi: #1E1A3A; --border: #2A2550;
+    --purple: #7C3AED; --purple-lt: #A78BFA; --purple-dk: #5B21B6;
+    --crimson: #DC2626; --gold: #F59E0B; --green: #10B981;
+    --text: #E5E0FF; --text-soft: #9CA3AF; --text-mute: #6B7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--ink); scroll-behavior: smooth; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--text); }
+  .display { font-family: 'Space Grotesk', sans-serif; }
+  a { text-decoration: none; color: inherit; }
+  button { font-family: inherit; cursor: pointer; }
+  img, svg { display: block; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-    /* ── Grain texture overlay ────────────────────────────────── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      opacity: 0.4;
-    }
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 50; background: rgba(13,11,26,0.85);
+    backdrop-filter: blur(12px); border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; max-width: 1100px; margin: 0 auto; }
+  .logo-row { display: flex; align-items: center; gap: 10px; }
+  .logo-badge {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, #7C3AED, #DC2626);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 17px;
+  }
+  .logo-text { font-size: 17px; font-weight: 700; }
+  .nav-cta {
+    padding: 9px 18px; border-radius: 9px; border: none; background: var(--purple);
+    color: #fff; font-size: 13.5px; font-weight: 700;
+  }
 
-    /* ── Gradient orbs ────────────────────────────────────────── */
-    .orb {
-      position: fixed; border-radius: 50%;
-      filter: blur(120px); pointer-events: none; z-index: 0;
-    }
-    .orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, rgba(124,58,237,0.18), transparent 70%); top: -200px; left: -150px; }
-    .orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, rgba(220,38,38,0.12), transparent 70%); bottom: 10%; right: -100px; }
-    .orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(245,158,11,0.08), transparent 70%); top: 50%; left: 40%; }
+  /* Hero */
+  .hero { padding: 80px 0 60px; text-align: center; }
+  .hero-eyebrow {
+    display: inline-block; padding: 6px 16px; border-radius: 100px;
+    background: rgba(124,58,237,0.12); border: 1px solid rgba(124,58,237,0.3);
+    color: var(--purple-lt); font-size: 12.5px; font-weight: 600; margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5.5vw, 52px); font-weight: 800; line-height: 1.1; letter-spacing: -1px;
+    margin-bottom: 20px;
+  }
+  .hero h1 .grad {
+    background: linear-gradient(135deg, #A78BFA, #F472B6); -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero p { font-size: 17px; color: var(--text-soft); max-width: 560px; margin: 0 auto 32px; line-height: 1.6; }
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    padding: 14px 28px; border-radius: 10px; border: none; background: var(--purple);
+    color: #fff; font-size: 15px; font-weight: 700;
+  }
+  .btn-ghost {
+    padding: 14px 28px; border-radius: 10px; border: 1px solid var(--border); background: transparent;
+    color: var(--text); font-size: 15px; font-weight: 600;
+  }
 
-    /* ── Nav ──────────────────────────────────────────────────── */
-    nav {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-      backdrop-filter: blur(20px) saturate(180%);
-      background: rgba(13,11,26,0.85);
-      border-bottom: 1px solid var(--bg-border);
-    }
+  /* Vertical cards */
+  .verticals { padding: 50px 0; }
+  .section-eyebrow {
+    text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-mute); margin-bottom: 12px;
+  }
+  .section-title { text-align: center; font-size: 28px; font-weight: 700; margin-bottom: 40px; }
+  .vertical-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .vertical-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .vertical-grid { grid-template-columns: repeat(2, 1fr); } }
+  .vertical-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px 16px; text-align: center; transition: border-color 0.2s, transform 0.2s;
+  }
+  .vertical-card:hover { border-color: var(--purple); transform: translateY(-3px); }
+  .vertical-icon { font-size: 34px; margin-bottom: 12px; }
+  .vertical-name { font-size: 14.5px; font-weight: 700; }
 
-    /* ── Saarthi logo mark ────────────────────────────────────── */
-    .logo-hex {
-      width: 36px; height: 36px;
-      background: linear-gradient(135deg, var(--brand-purple), var(--brand-red));
-      clip-path: polygon(50% 0%,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%);
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 16px; color: white;
-    }
+  /* Features */
+  .features { padding: 60px 0; }
+  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 800px) { .feature-grid { grid-template-columns: 1fr; } }
+  .feature-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 26px; }
+  .feature-icon {
+    width: 44px; height: 44px; border-radius: 12px; background: rgba(124,58,237,0.15);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 16px;
+  }
+  .feature-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .feature-desc { font-size: 13.5px; color: var(--text-soft); line-height: 1.6; }
 
-    /* ── Hero headline ────────────────────────────────────────── */
-    .hero-display {
-      font-size: clamp(2.5rem, 7vw, 5.5rem);
-      font-weight: 700; line-height: 1.05; letter-spacing: -0.03em;
-    }
-    .gradient-text {
-      background: linear-gradient(135deg, #A78BFA 0%, #F472B6 50%, #FB923C 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .hindi-accent {
-      font-family: 'Noto Sans Devanagari', sans-serif;
-      font-size: 0.65em; opacity: 0.55; display: block;
-      letter-spacing: 0.05em; margin-bottom: 8px;
-    }
+  /* How it works */
+  .how-it-works { padding: 60px 0; }
+  .step-row { display: flex; flex-direction: column; gap: 16px; max-width: 680px; margin: 0 auto; }
+  .step-item { display: flex; gap: 18px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .step-num {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--purple); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
+  }
+  .step-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .step-desc { font-size: 13.5px; color: var(--text-soft); line-height: 1.55; }
 
-    /* ── Cards ────────────────────────────────────────────────── */
-    .glass-card {
-      background: rgba(19,16,42,0.8);
-      border: 1px solid var(--bg-border);
-      border-radius: 16px;
-      backdrop-filter: blur(12px);
-      transition: border-color 0.3s, transform 0.3s;
-    }
-    .glass-card:hover { border-color: rgba(124,58,237,0.5); transform: translateY(-3px); }
+  /* Pricing */
+  .pricing { padding: 60px 0; }
+  .billing-toggle {
+    display: flex; justify-content: center; gap: 6px; margin-bottom: 36px;
+  }
+  .toggle-btn {
+    padding: 8px 18px; border-radius: 100px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text-soft); font-size: 13px; font-weight: 600;
+  }
+  .toggle-btn.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+  .pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 720px; margin: 0 auto; }
+  @media (max-width: 700px) { .pricing-grid { grid-template-columns: 1fr; } }
+  .price-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 30px; }
+  .price-card.featured { border-color: var(--purple); box-shadow: 0 8px 32px rgba(124,58,237,0.18); position: relative; }
+  .price-badge {
+    position: absolute; top: -12px; right: 24px; background: var(--purple); color: #fff;
+    font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 100px;
+  }
+  .price-plan-name { font-size: 14px; color: var(--text-soft); font-weight: 600; margin-bottom: 8px; }
+  .price-amount { font-size: 36px; font-weight: 800; margin-bottom: 4px; }
+  .price-period { font-size: 13px; color: var(--text-mute); margin-bottom: 24px; }
+  .price-features { list-style: none; margin-bottom: 28px; display: flex; flex-direction: column; gap: 10px; }
+  .price-features li { font-size: 13.5px; color: var(--text-soft); display: flex; gap: 8px; }
+  .price-features li::before { content: '✓'; color: var(--green); font-weight: 700; flex-shrink: 0; }
+  .price-cta { width: 100%; padding: 13px; border-radius: 10px; border: none; font-size: 14.5px; font-weight: 700; }
+  .price-cta.primary { background: var(--purple); color: #fff; }
+  .price-cta.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 
-    /* ── Pricing ──────────────────────────────────────────────── */
-    .plan-card { position: relative; overflow: hidden; }
-    .plan-card.featured::before {
-      content: '';
-      position: absolute; inset: 0; padding: 1.5px; border-radius: 16px;
-      background: linear-gradient(135deg, var(--brand-purple), var(--brand-red));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: destination-out; mask-composite: exclude;
-    }
+  /* WhatsApp demo */
+  .demo-section { padding: 60px 0; }
+  .demo-phone {
+    max-width: 320px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 24px; padding: 14px; box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+  }
+  .demo-screen { background: #0B141A; border-radius: 16px; overflow: hidden; }
+  .demo-header { background: #1F2C34; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .demo-avatar {
+    width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #7C3AED, #DC2626);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px;
+  }
+  .demo-name { font-size: 13.5px; font-weight: 700; color: #fff; }
+  .demo-status { font-size: 11px; color: #8696A0; }
+  .demo-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 280px; }
+  .bubble { max-width: 80%; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.4; }
+  .bubble.bot { background: #1F2C34; color: #E9EDEF; align-self: flex-start; border-radius: 2px 8px 8px 8px; }
+  .bubble.user { background: #005C4B; color: #E9EDEF; align-self: flex-end; border-radius: 8px 2px 8px 8px; }
 
-    /* ── Buttons ──────────────────────────────────────────────── */
-    .btn-primary {
-      background: linear-gradient(135deg, var(--brand-purple), #9333EA);
-      color: white; border: none; border-radius: 10px;
-      font-weight: 600; cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
-      position: relative; overflow: hidden;
-    }
-    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-ghost {
-      background: transparent; color: #A78BFA;
-      border: 1px solid rgba(124,58,237,0.4); border-radius: 10px;
-      font-weight: 600; cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
-    }
-    .btn-ghost:hover { background: rgba(124,58,237,0.1); border-color: var(--brand-purple); }
+  /* Onboard form */
+  .onboard-section { padding: 60px 0 80px; }
+  .onboard-card {
+    max-width: 560px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 32px;
+  }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--text-soft); margin-bottom: 6px; display: block; }
+  .field-input, .field-select {
+    width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-hi); color: var(--text); font-size: 14px; margin-bottom: 16px;
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .biz-type-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
+  @media (max-width: 560px) { .biz-type-grid { grid-template-columns: repeat(3, 1fr); } }
+  .biz-type-opt {
+    padding: 12px 6px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-hi);
+    text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  }
+  .biz-type-opt.selected { border-color: var(--purple); background: rgba(124,58,237,0.15); }
+  .biz-type-opt-icon { font-size: 20px; margin-bottom: 4px; }
+  .biz-type-opt-label { font-size: 11px; font-weight: 600; color: var(--text-soft); }
+  .biz-type-opt.selected .biz-type-opt-label { color: var(--purple-lt); }
+  .submit-btn {
+    width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--purple);
+    color: #fff; font-size: 15px; font-weight: 700; margin-top: 8px;
+  }
+  .form-error { background: #2A1414; border: 1px solid rgba(220,38,38,0.35); color: #FCA5A5;
+    padding: 11px 14px; border-radius: 9px; font-size: 13px; margin-bottom: 16px; }
+  .form-success { text-align: center; padding: 20px 0; }
 
-    /* ── Toggle ──────────────────────────────────────────────── */
-    .toggle-pill {
-      background: var(--bg-card); border: 1px solid var(--bg-border);
-      border-radius: 100px; padding: 4px; display: inline-flex; gap: 4px;
-    }
-    .toggle-pill button {
-      border-radius: 100px; padding: 6px 20px; font-size: 0.875rem; font-weight: 600;
-      border: none; cursor: pointer; transition: all 0.25s;
-      background: transparent; color: #9CA3AF;
-    }
-    .toggle-pill button.active { background: var(--brand-purple); color: white; }
-
-    /* ── WhatsApp Chat Demo ───────────────────────────────────── */
-    .chat-window {
-      background: #111B21; border-radius: 16px; overflow: hidden;
-      font-family: system-ui, sans-serif; font-size: 14px;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.5);
-      max-width: 400px; width: 100%;
-    }
-    .chat-header {
-      background: #202C33; padding: 12px 16px; display: flex;
-      align-items: center; gap: 12px;
-    }
-    .chat-avatar {
-      width: 40px; height: 40px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--brand-purple), var(--brand-red));
-      display: flex; align-items: center; justify-content: center;
-      color: white; font-weight: 700; font-size: 16px; flex-shrink: 0;
-    }
-    .chat-body { padding: 16px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 280px; }
-    .bubble {
-      max-width: 82%; padding: 8px 12px; border-radius: 8px;
-      line-height: 1.4; color: #E9EDEF; font-size: 13.5px;
-      animation: fadeUp 0.4s ease both;
-    }
-    .bubble.bot  { background: #202C33; border-radius: 0px 8px 8px 8px; align-self: flex-start; }
-    .bubble.user { background: #005C4B; border-radius: 8px 0px 8px 8px; align-self: flex-end; }
-    .bubble-time { font-size: 11px; color: #8696A0; text-align: right; margin-top: 3px; }
-    .chat-input-bar {
-      background: #202C33; padding: 10px 12px; display: flex; gap: 8px; align-items: center;
-    }
-    .chat-input-bar input {
-      flex: 1; background: #2A3942; border: none; border-radius: 20px;
-      color: #E9EDEF; padding: 8px 14px; font-size: 14px; outline: none;
-    }
-    .chat-send {
-      width: 38px; height: 38px; border-radius: 50%; border: none;
-      background: #00A884; color: white; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; transition: background 0.2s;
-    }
-    .chat-send:hover { background: #00CF9D; }
-    .typing-dots span {
-      display: inline-block; width: 6px; height: 6px; background: #8696A0;
-      border-radius: 50%; margin: 0 2px;
-      animation: dot-bounce 1.2s infinite;
-    }
-    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-    /* ── Stat counter ─────────────────────────────────────────── */
-    .stat-num {
-      font-size: 3rem; font-weight: 700; letter-spacing: -0.04em;
-      background: linear-gradient(135deg, #A78BFA, #F472B6);
-      background-clip: text;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    /* ── Feature icon ────────────────────────────────────────── */
-    .feat-icon {
-      width: 48px; height: 48px; border-radius: 12px;
-      background: rgba(124,58,237,0.15);
-      border: 1px solid rgba(124,58,237,0.3);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; flex-shrink: 0;
-    }
-
-    /* ── Section label ───────────────────────────────────────── */
-    .eyebrow {
-      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.15em;
-      text-transform: uppercase; color: #A78BFA;
-      display: inline-flex; align-items: center; gap: 6px;
-    }
-    .eyebrow::before { content:''; width:20px; height:1px; background: #A78BFA; }
-
-    /* ── Divider ──────────────────────────────────────────────── */
-    .grad-divider {
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--bg-border), transparent);
-    }
-
-    /* ── Animations ───────────────────────────────────────────── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(14px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes dot-bounce {
-      0%,80%,100% { transform: translateY(0); }
-      40%         { transform: translateY(-6px); }
-    }
-    @keyframes pulse-ring {
-      0%   { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(124,58,237,0.5); }
-      70%  { transform: scale(1);   box-shadow: 0 0 0 14px rgba(124,58,237,0); }
-      100% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(124,58,237,0); }
-    }
-    .pulse-ring { animation: pulse-ring 2s infinite; }
-
-    /* ── Form ──────────────────────────────────────────────────── */
-    .form-input {
-      width: 100%; background: rgba(255,255,255,0.05);
-      border: 1px solid var(--bg-border); border-radius: 10px;
-      color: #E5E0FF; padding: 11px 14px; font-size: 15px;
-      font-family: inherit; outline: none; transition: border-color 0.2s;
-    }
-    .form-input:focus { border-color: var(--brand-purple); }
-    .form-input::placeholder { color: #6B7280; }
-
-    /* ── Mobile nav ───────────────────────────────────────────── */
-    #mobile-menu { display: none; }
-    #mobile-menu.open { display: flex; }
-
-    /* Content above grain */
-    main, nav, footer { position: relative; z-index: 1; }
-  </style>
+  footer { padding: 32px 0; border-top: 1px solid var(--border); text-align: center; color: var(--text-mute); font-size: 12.5px; }
+</style>
 </head>
 <body>
 
-<!-- Ambient orbs -->
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-
-<!-- ═══════════════════════════════════════ NAV ══════════════════════════════ -->
 <nav>
-  <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-    <a href="/" class="flex items-center gap-3">
-      <div class="logo-hex">S</div>
-      <span class="font-bold text-lg tracking-tight text-white">Saarthi<span class="text-purple-400">-AI</span></span>
-    </a>
-
-    <!-- Desktop links -->
-    <div class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">
-      <a href="#features"  class="hover:text-white transition-colors">Features</a>
-      <a href="#how"       class="hover:text-white transition-colors">How It Works</a>
-      <a href="#pricing"   class="hover:text-white transition-colors">Pricing</a>
-      <a href="#demo"      class="hover:text-white transition-colors">Live Demo</a>
+  <div class="nav-inner">
+    <div class="logo-row">
+      <div class="logo-badge display">S</div>
+      <div class="logo-text display">Saarthi-AI</div>
     </div>
-
-    <div class="hidden md:flex items-center gap-3">
-      <button class="btn-ghost text-sm px-4 py-2">Log In</button>
-      <button onclick="document.getElementById('onboard').scrollIntoView({behavior:'smooth'})"
-              class="btn-primary text-sm px-5 py-2">Get Started →</button>
-    </div>
-
-    <!-- Mobile hamburger -->
-    <button id="hamburger" class="md:hidden text-gray-400 hover:text-white" onclick="toggleMenu()">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path id="ham-icon" stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-      </svg>
-    </button>
-  </div>
-
-  <!-- Mobile menu -->
-  <div id="mobile-menu" class="flex-col px-5 pb-4 gap-4 text-sm font-medium border-t border-white/10">
-    <a href="#features" class="text-gray-400 hover:text-white py-2" onclick="toggleMenu()">Features</a>
-    <a href="#pricing"  class="text-gray-400 hover:text-white py-2" onclick="toggleMenu()">Pricing</a>
-    <a href="#demo"     class="text-gray-400 hover:text-white py-2" onclick="toggleMenu()">Live Demo</a>
-    <button onclick="document.getElementById('onboard').scrollIntoView({behavior:'smooth'});toggleMenu()"
-            class="btn-primary text-sm px-5 py-2.5 w-full mt-2">Get Started →</button>
+    <button class="nav-cta" onclick="document.getElementById('onboard').scrollIntoView({behavior:'smooth'})">Get Started</button>
   </div>
 </nav>
 
-<main>
+<section class="hero">
+  <div class="container">
+    <span class="hero-eyebrow">🤖 AI WhatsApp Receptionist for Local Businesses</span>
+    <h1 class="display">Your AI receptionist for <span class="grad">salons, clinics, cafes & more</span></h1>
+    <p>Saarthi-AI handles bookings on WhatsApp 24/7 — for salons, parlours, clinics, cafes, and restaurants. Customers chat, pick a slot, pay a deposit, and get a confirmation — all without you lifting a finger.</p>
+    <div class="hero-ctas">
+      <button class="btn-primary" onclick="document.getElementById('onboard').scrollIntoView({behavior:'smooth'})">Register Your Business →</button>
+      <button class="btn-ghost" onclick="document.getElementById('demo').scrollIntoView({behavior:'smooth'})">See it in action</button>
+    </div>
+  </div>
+</section>
 
-<!-- ═══════════════════════════════════════ HERO ═════════════════════════════ -->
-<section class="min-h-screen flex items-center pt-24 pb-16 px-5">
-  <div class="max-w-6xl mx-auto w-full">
-    <div class="grid lg:grid-cols-2 gap-16 items-center">
+<section class="verticals">
+  <div class="container">
+    <div class="section-eyebrow">Built For</div>
+    <div class="section-title display">Every kind of local business</div>
+    <div class="vertical-grid">
+      <div class="vertical-card"><div class="vertical-icon">💇</div><div class="vertical-name">Salon</div></div>
+      <div class="vertical-card"><div class="vertical-icon">💅</div><div class="vertical-name">Parlour</div></div>
+      <div class="vertical-card"><div class="vertical-icon">🩺</div><div class="vertical-name">Clinic</div></div>
+      <div class="vertical-card"><div class="vertical-icon">☕</div><div class="vertical-name">Cafe</div></div>
+      <div class="vertical-card"><div class="vertical-icon">🍽️</div><div class="vertical-name">Restaurant</div></div>
+    </div>
+  </div>
+</section>
 
-      <!-- Left -->
-      <div>
-        <span class="eyebrow mb-6 block">AI for Indian Businesses</span>
-        <span class="hindi-accent">आपका AI रिसेप्शनिस्ट, 24×7</span>
-        <h1 class="hero-display text-white mb-6">
-          Never Miss a<br/>
-          <span class="gradient-text">Booking Again.</span>
-        </h1>
-        <p class="text-gray-400 text-lg leading-relaxed mb-8 max-w-lg">
-          Saarthi-AI gives your salon or café a smart WhatsApp receptionist that books appointments, collects advance payments, and manages your team — automatically.
-        </p>
-
-        <div class="flex flex-wrap gap-4 mb-10">
-          <button onclick="document.getElementById('onboard').scrollIntoView({behavior:'smooth'})"
-                  class="btn-primary px-7 py-3.5 text-base pulse-ring">
-            Start Free Trial →
-          </button>
-          <button onclick="document.getElementById('demo').scrollIntoView({behavior:'smooth'})"
-                  class="btn-ghost px-7 py-3.5 text-base">
-            ▷ Watch Demo
-          </button>
-        </div>
-
-        <!-- Social proof bar -->
-        <div class="flex items-center gap-6 text-sm text-gray-500">
-          <span class="flex items-center gap-2">
-            <span class="text-green-400 text-lg">●</span> Live on WhatsApp
-          </span>
-          <span class="flex items-center gap-2">
-            🔒 Razorpay Secured
-          </span>
-          <span class="flex items-center gap-2">
-            🇮🇳 Made for India
-          </span>
-        </div>
+<section class="features">
+  <div class="container">
+    <div class="section-eyebrow">Why Saarthi-AI</div>
+    <div class="section-title display">Everything you need, nothing you don't</div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-title">AI Receptionist (Priya)</div>
+        <div class="feature-desc">Chats with customers in Hinglish, understands your services, and helps them book — 24/7, no breaks.</div>
       </div>
+      <div class="feature-card">
+        <div class="feature-icon">💳</div>
+        <div class="feature-title">25% Advance Deposit</div>
+        <div class="feature-desc">Customers pay a deposit via Razorpay before their slot is confirmed — fewer no-shows, guaranteed revenue.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Owner Dashboard</div>
+        <div class="feature-desc">See total revenue, individual staff sales, manage your menu/services, and add slots — all from one dashboard.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧾</div>
+        <div class="feature-title">Auto Invoices</div>
+        <div class="feature-desc">Every confirmed booking generates a PDF invoice automatically, delivered straight to WhatsApp.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <div class="feature-title">Your Own QR Code</div>
+        <div class="feature-desc">Get a branded QR code customers scan to start chatting with your AI receptionist instantly.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">Vertical-Aware Setup</div>
+        <div class="feature-desc">Whether you run a clinic or a cafe, your dashboard automatically adapts — schedules for staff, tables for dine-in.</div>
+      </div>
+    </div>
+  </div>
+</section>
 
-      <!-- Right — Chat preview -->
-      <div class="flex justify-center lg:justify-end" id="demo">
-        <div class="chat-window">
-          <div class="chat-header">
-            <div class="chat-avatar">P</div>
+<section class="how-it-works">
+  <div class="container">
+    <div class="section-eyebrow">The Flow</div>
+    <div class="section-title display">From "Hi" to confirmed booking</div>
+    <div class="step-row">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div><div class="step-title">Customer messages your WhatsApp</div><div class="step-desc">They scan your QR code or message your business number directly.</div></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div><div class="step-title">Priya greets & collects their name</div><div class="step-desc">A friendly Hinglish conversation — no forms, no friction.</div></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div><div class="step-title">Customer gets a booking link</div><div class="step-desc">They pick services, a staff member/table, and a time slot on a simple web page.</div></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">4</div>
+        <div><div class="step-title">Deposit paid, booking confirmed</div><div class="step-desc">25% advance via Razorpay secures the slot. Invoice sent automatically on WhatsApp.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="demo-section" id="demo">
+  <div class="container">
+    <div class="section-eyebrow">Live Preview</div>
+    <div class="section-title display">See Priya in action</div>
+    <div class="demo-phone">
+      <div class="demo-screen">
+        <div class="demo-header">
+          <div class="demo-avatar display">P</div>
+          <div><div class="demo-name">Priya</div><div class="demo-status">● Online</div></div>
+        </div>
+        <div class="demo-body" id="demo-chat"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div class="section-eyebrow">Pricing</div>
+    <div class="section-title display">Simple, transparent pricing</div>
+    <div class="billing-toggle">
+      <button class="toggle-btn active" id="toggle-monthly">Monthly</button>
+      <button class="toggle-btn" id="toggle-yearly">Yearly (save 17%)</button>
+    </div>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-plan-name">Basic</div>
+        <div class="price-amount display" id="basic-price">₹999</div>
+        <div class="price-period" id="basic-period">per month</div>
+        <ul class="price-features">
+          <li>AI WhatsApp Receptionist</li>
+          <li>Up to 20 bookings/day</li>
+          <li>Razorpay deposit collection</li>
+          <li>Auto PDF invoices</li>
+          <li>Owner dashboard</li>
+        </ul>
+        <button class="price-cta ghost" onclick="selectPlan('basic')">Choose Basic</button>
+      </div>
+      <div class="price-card featured">
+        <span class="price-badge">POPULAR</span>
+        <div class="price-plan-name">Premium</div>
+        <div class="price-amount display" id="premium-price">₹1999</div>
+        <div class="price-period" id="premium-period">per month</div>
+        <ul class="price-features">
+          <li>Everything in Basic</li>
+          <li>Up to 50 bookings/day</li>
+          <li>Individual staff sales tracking</li>
+          <li>Priority support</li>
+          <li>Custom AI persona name</li>
+        </ul>
+        <button class="price-cta primary" onclick="selectPlan('premium')">Choose Premium</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="onboard-section" id="onboard">
+  <div class="container">
+    <div class="section-eyebrow">Get Started</div>
+    <div class="section-title display">Register your business</div>
+    <div class="onboard-card">
+      <div id="form-error-box"></div>
+      <div id="onboard-form-wrap">
+        <form id="onboard-form">
+          <label class="field-label">Business Name</label>
+          <input class="field-input" id="f-business-name" placeholder="e.g. Sharma Hair Salon" required />
+
+          <label class="field-label">Business Type</label>
+          <div class="biz-type-grid" id="biz-type-grid">
+            <div class="biz-type-opt" data-value="salon"><div class="biz-type-opt-icon">💇</div><div class="biz-type-opt-label">Salon</div></div>
+            <div class="biz-type-opt" data-value="parlour"><div class="biz-type-opt-icon">💅</div><div class="biz-type-opt-label">Parlour</div></div>
+            <div class="biz-type-opt" data-value="clinic"><div class="biz-type-opt-icon">🩺</div><div class="biz-type-opt-label">Clinic</div></div>
+            <div class="biz-type-opt" data-value="cafe"><div class="biz-type-opt-icon">☕</div><div class="biz-type-opt-label">Cafe</div></div>
+            <div class="biz-type-opt" data-value="restaurant"><div class="biz-type-opt-icon">🍽️</div><div class="biz-type-opt-label">Restaurant</div></div>
+          </div>
+
+          <label class="field-label">Owner Name</label>
+          <input class="field-input" id="f-owner-name" placeholder="Your full name" required />
+
+          <div class="field-row">
             <div>
-              <div class="text-white font-semibold text-sm">Priya ✦ AI Receptionist</div>
-              <div class="text-xs" style="color:#00A884">● Online — Powered by Saarthi-AI</div>
+              <label class="field-label">Phone</label>
+              <input class="field-input" id="f-phone" placeholder="+919876543210" required />
+            </div>
+            <div>
+              <label class="field-label">Email</label>
+              <input class="field-input" id="f-email" type="email" placeholder="you@example.com" required />
             </div>
           </div>
-          <div class="chat-body" id="chat-body">
-            <!-- Messages injected by JS -->
-          </div>
-          <div class="chat-input-bar">
-            <input id="chat-input" type="text" placeholder="Type a message…"
-                   onkeydown="if(event.key==='Enter') sendDemoMessage()" />
-            <button class="chat-send" onclick="sendDemoMessage()">➤</button>
-          </div>
-        </div>
-      </div>
 
+          <div class="field-row">
+            <div>
+              <label class="field-label">City</label>
+              <input class="field-input" id="f-city" placeholder="e.g. Ranchi" required />
+            </div>
+            <div>
+              <label class="field-label">WhatsApp Phone Number ID</label>
+              <input class="field-input" id="f-phone-id" placeholder="From Meta dashboard" />
+            </div>
+          </div>
+
+          <label class="field-label">Full Address</label>
+          <input class="field-input" id="f-address" placeholder="Shop number, street, area" required />
+
+          <div class="field-row">
+            <div>
+              <label class="field-label">Plan</label>
+              <select class="field-select" id="f-plan">
+                <option value="basic">Basic — ₹999/mo</option>
+                <option value="premium">Premium — ₹1999/mo</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Billing Cycle</label>
+              <select class="field-select" id="f-billing">
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly (save 17%)</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="submit-btn" id="submit-btn">Register & Get Payment Link →</button>
+        </form>
+      </div>
+      <div id="form-success-box" style="display:none"></div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════════════════════════════════ STATS ════════════════════════════ -->
-<div class="grad-divider"></div>
-<section class="py-16 px-5">
-  <div class="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-    <div>
-      <div class="stat-num" data-target="2400">0</div>
-      <div class="text-gray-400 text-sm mt-1">Bookings Automated</div>
-    </div>
-    <div>
-      <div class="stat-num" data-target="98">0</div>
-      <div class="text-gray-400 text-sm mt-1">% Uptime SLA</div>
-    </div>
-    <div>
-      <div class="stat-num" data-target="150">0</div>
-      <div class="text-gray-400 text-sm mt-1">Businesses Onboarded</div>
-    </div>
-    <div>
-      <div class="stat-num" data-target="40">0</div>
-      <div class="text-gray-400 text-sm mt-1">% More Revenue Captured</div>
-    </div>
-  </div>
-</section>
-<div class="grad-divider"></div>
-
-<!-- ═══════════════════════════════════════ FEATURES ═════════════════════════ -->
-<section id="features" class="py-24 px-5">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-center mb-16">
-      <span class="eyebrow mb-4 block justify-center">Everything Included</span>
-      <h2 class="text-3xl md:text-5xl font-bold text-white leading-tight">
-        One platform.<br/><span class="gradient-text">Zero missed bookings.</span>
-      </h2>
-    </div>
-
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <!-- Feature cards -->
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">🤖</div>
-        <h3 class="text-white font-semibold text-lg mb-2">Gemini AI Receptionist</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Priya — your AI staff — speaks Hinglish, understands your menu, and books slots around the clock. No training required.</p>
-      </div>
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">💳</div>
-        <h3 class="text-white font-semibold text-lg mb-2">25% Advance Collection</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Auto-generate Razorpay deposit links. No-shows drop by 60% when customers pay to secure their slot.</p>
-      </div>
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">📊</div>
-        <h3 class="text-white font-semibold text-lg mb-2">Owner Analytics</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Revenue graphs, peak booking hours, staff performance — all on your Flutter app dashboard, real-time.</p>
-      </div>
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">🔐</div>
-        <h3 class="text-white font-semibold text-lg mb-2">Role-Based Access</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Staff see only their schedule. Only you, the owner, see revenue. Financial data stays yours.</p>
-      </div>
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">📄</div>
-        <h3 class="text-white font-semibold text-lg mb-2">Auto PDF Invoices</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Every confirmed booking triggers a professional GST-ready invoice sent directly to the customer on WhatsApp.</p>
-      </div>
-      <div class="glass-card p-7">
-        <div class="feat-icon mb-5">🔄</div>
-        <h3 class="text-white font-semibold text-lg mb-2">Daily Auto-Backups</h3>
-        <p class="text-gray-400 text-sm leading-relaxed">Nightly Firestore snapshots archived to Firebase Storage. Your business data is always safe.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════ HOW IT WORKS ═════════════════════ -->
-<section id="how" class="py-24 px-5 relative">
-  <div class="max-w-4xl mx-auto">
-    <div class="text-center mb-16">
-      <span class="eyebrow mb-4 block justify-center">The Flow</span>
-      <h2 class="text-3xl md:text-4xl font-bold text-white">
-        From "Koi slot hai?" to <span class="gradient-text">confirmed & paid</span>
-      </h2>
-    </div>
-
-    <div class="space-y-6">
-      <div class="glass-card p-7 flex items-start gap-6">
-        <div class="text-3xl font-bold text-purple-400 w-10 flex-shrink-0 mt-1">01</div>
-        <div>
-          <h3 class="text-white font-semibold text-lg mb-1">Customer messages on WhatsApp</h3>
-          <p class="text-gray-400 text-sm">Any customer texts your business WhatsApp number — in Hindi, English, or Hinglish.</p>
-        </div>
-      </div>
-      <div class="glass-card p-7 flex items-start gap-6">
-        <div class="text-3xl font-bold text-purple-400 w-10 flex-shrink-0 mt-1">02</div>
-        <div>
-          <h3 class="text-white font-semibold text-lg mb-1">Priya checks availability & offers slots</h3>
-          <p class="text-gray-400 text-sm">Gemini AI reads your live slot calendar and service menu, then suggests matching openings.</p>
-        </div>
-      </div>
-      <div class="glass-card p-7 flex items-start gap-6">
-        <div class="text-3xl font-bold text-purple-400 w-10 flex-shrink-0 mt-1">03</div>
-        <div>
-          <h3 class="text-white font-semibold text-lg mb-1">Slot locked + payment link sent</h3>
-          <p class="text-gray-400 text-sm">The chosen slot is locked for 15 minutes. A Razorpay link collects the 25% deposit right in the chat.</p>
-        </div>
-      </div>
-      <div class="glass-card p-7 flex items-start gap-6">
-        <div class="text-3xl font-bold text-purple-400 w-10 flex-shrink-0 mt-1">04</div>
-        <div>
-          <h3 class="text-white font-semibold text-lg mb-1">Booking confirmed + invoice delivered</h3>
-          <p class="text-gray-400 text-sm">Payment triggers confirmation and an auto-generated PDF invoice — both sent to the customer instantly.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════ PRICING ══════════════════════════ -->
-<section id="pricing" class="py-24 px-5">
-  <div class="max-w-4xl mx-auto">
-    <div class="text-center mb-10">
-      <span class="eyebrow mb-4 block justify-center">Transparent Pricing</span>
-      <h2 class="text-3xl md:text-4xl font-bold text-white mb-8">Choose your plan</h2>
-
-      <!-- Monthly / Yearly toggle -->
-      <div class="toggle-pill" id="billing-toggle">
-        <button class="active" onclick="setBilling('monthly')">Monthly</button>
-        <button onclick="setBilling('yearly')">Yearly <span class="text-green-400 text-xs font-bold">-17%</span></button>
-      </div>
-    </div>
-
-    <div class="grid md:grid-cols-2 gap-6 mt-10">
-
-      <!-- Basic Plan -->
-      <div class="glass-card plan-card p-8">
-        <div class="text-purple-300 font-semibold mb-2">Starter</div>
-        <div class="flex items-end gap-1 mb-1">
-          <span class="text-4xl font-bold text-white" id="basic-price">₹999</span>
-          <span class="text-gray-400 mb-1" id="basic-period">/month</span>
-        </div>
-        <p class="text-sm text-gray-500 mb-6" id="basic-note">billed monthly • +₹499 setup</p>
-        <ul class="space-y-3 mb-8">
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> WhatsApp AI Receptionist (Priya)</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Up to 20 bookings/day</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Razorpay payment collection</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> PDF invoices</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Staff app (2 users)</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-gray-600">✕</span> <span class="text-gray-500">Revenue analytics</span></li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-gray-600">✕</span> <span class="text-gray-500">Priority support</span></li>
-        </ul>
-        <button onclick="openOnboard('basic')" class="btn-ghost w-full py-3 font-semibold">Get Starter →</button>
-      </div>
-
-      <!-- Premium Plan -->
-      <div class="glass-card plan-card featured p-8" style="background: rgba(76,29,149,0.25);">
-        <div class="inline-flex items-center gap-2 mb-2">
-          <span class="text-purple-300 font-semibold">Pro</span>
-          <span class="text-xs font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-0.5 rounded-full">POPULAR</span>
-        </div>
-        <div class="flex items-end gap-1 mb-1">
-          <span class="text-4xl font-bold text-white" id="prem-price">₹1,999</span>
-          <span class="text-gray-400 mb-1" id="prem-period">/month</span>
-        </div>
-        <p class="text-sm text-gray-500 mb-6" id="prem-note">billed monthly • +₹499 setup</p>
-        <ul class="space-y-3 mb-8">
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Everything in Starter</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Up to 50 bookings/day</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Revenue analytics dashboard</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Staff management (unlimited)</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Custom AI persona name</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Priority WhatsApp support</li>
-          <li class="flex items-center gap-3 text-sm text-gray-300"><span class="text-green-400">✓</span> Multi-branch support</li>
-        </ul>
-        <button onclick="openOnboard('premium')" class="btn-primary w-full py-3 font-semibold">Get Pro →</button>
-      </div>
-
-    </div>
-
-    <!-- Enterprise CTA -->
-    <div class="mt-6 glass-card p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div>
-        <div class="text-white font-semibold">Enterprise / Chain Businesses</div>
-        <div class="text-gray-400 text-sm">Multiple branches, custom integrations, dedicated support, SLA guarantees.</div>
-      </div>
-      <button class="btn-ghost px-6 py-2.5 text-sm whitespace-nowrap">Contact Sales →</button>
-    </div>
-  </div>
-</section>
-
-<!-- ═════════════════════════════ ONBOARD FORM ═══════════════════════════════ -->
-<section id="onboard" class="py-24 px-5">
-  <div class="max-w-2xl mx-auto">
-    <div class="text-center mb-10">
-      <span class="eyebrow mb-4 block justify-center">Get Started Today</span>
-      <h2 class="text-3xl font-bold text-white">Register your business</h2>
-      <p class="text-gray-400 text-sm mt-2">Takes 2 minutes. Your AI receptionist goes live within 24 hours.</p>
-    </div>
-
-    <div class="glass-card p-8">
-      <div id="form-success" class="hidden text-center py-8">
-        <div class="text-5xl mb-4">🎉</div>
-        <h3 class="text-white text-xl font-bold mb-2">Registration Received!</h3>
-        <p class="text-gray-400">Check WhatsApp for your payment link. Complete payment to activate Saarthi-AI.</p>
-      </div>
-      <div id="form-error" class="hidden mb-4 p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm"></div>
-
-      <div id="onboard-form">
-        <div class="grid sm:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Business Name *</label>
-            <input id="f-biz-name" class="form-input" type="text" placeholder="Sharma Hair Salon" />
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Business Type *</label>
-            <select id="f-biz-type" class="form-input">
-              <option value="salon">Salon / Barbershop</option>
-              <option value="cafe">Café / Restaurant</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Owner Name *</label>
-            <input id="f-owner-name" class="form-input" type="text" placeholder="Ramesh Sharma" />
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">WhatsApp Number *</label>
-            <input id="f-phone" class="form-input" type="tel" placeholder="+919876543210" />
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Email Address *</label>
-            <input id="f-email" class="form-input" type="email" placeholder="ramesh@example.com" />
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">City *</label>
-            <input id="f-city" class="form-input" type="text" placeholder="Ranchi" />
-          </div>
-          <div class="sm:col-span-2">
-            <label class="text-sm text-gray-400 mb-1 block">Business Address *</label>
-            <input id="f-address" class="form-input" type="text" placeholder="Shop 5, Main Market, Ranchi" />
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Select Plan *</label>
-            <select id="f-plan" class="form-input">
-              <option value="basic">Starter — ₹999/mo</option>
-              <option value="premium">Pro — ₹1,999/mo</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-sm text-gray-400 mb-1 block">Billing Cycle *</label>
-            <select id="f-billing" class="form-input">
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly (Save 17%)</option>
-            </select>
-          </div>
-        </div>
-
-        <p class="text-xs text-gray-500 mb-5">
-          By submitting, you agree to our Terms of Service. A ₹499 one-time setup fee applies.
-        </p>
-
-        <button id="submit-btn" onclick="submitOnboard()"
-                class="btn-primary w-full py-4 text-base font-semibold">
-          Register & Get Payment Link →
-        </button>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════ FOOTER ═══════════════════════════ -->
-<div class="grad-divider"></div>
-<footer class="py-12 px-5">
-  <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-    <div class="flex items-center gap-3">
-      <div class="logo-hex">S</div>
-      <span class="font-bold text-white">Saarthi-AI</span>
-      <span class="text-gray-600 text-sm">© 2025</span>
-    </div>
-    <div class="flex items-center gap-6 text-sm text-gray-500">
-      <a href="#" class="hover:text-white transition-colors">Privacy</a>
-      <a href="#" class="hover:text-white transition-colors">Terms</a>
-      <a href="mailto:support@saarthi-ai.in" class="hover:text-white transition-colors">support@saarthi-ai.in</a>
-    </div>
-    <div class="text-sm text-gray-600">Powered by Gemini AI · Meta WhatsApp · Razorpay</div>
-  </div>
+<footer>
+  <div class="container">© 2026 Saarthi-AI. AI WhatsApp Receptionist for local businesses across India.</div>
 </footer>
 
-</main>
-
-<!-- ═══════════════════════════════════════ SCRIPTS ══════════════════════════ -->
 <script>
-// ── Mobile nav ──────────────────────────────────────────────────────────────
-function toggleMenu() {
-  const menu = document.getElementById('mobile-menu');
-  menu.classList.toggle('open');
-}
+(function () {
+  'use strict';
 
-// ── Billing toggle ───────────────────────────────────────────────────────────
-let billingCycle = 'monthly';
-function setBilling(cycle) {
-  billingCycle = cycle;
-  const btns = document.querySelectorAll('#billing-toggle button');
-  btns.forEach(b => b.classList.remove('active'));
-  btns[cycle === 'monthly' ? 0 : 1].classList.add('active');
+  var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : 'https://saarthi-ai-backend-production-9063.up.railway.app';
 
-  if (cycle === 'monthly') {
-    document.getElementById('basic-price').textContent  = '₹999';
-    document.getElementById('basic-period').textContent = '/month';
-    document.getElementById('basic-note').textContent   = 'billed monthly • +₹499 setup';
-    document.getElementById('prem-price').textContent   = '₹1,999';
-    document.getElementById('prem-period').textContent  = '/month';
-    document.getElementById('prem-note').textContent    = 'billed monthly • +₹499 setup';
-  } else {
-    document.getElementById('basic-price').textContent  = '₹9,999';
-    document.getElementById('basic-period').textContent = '/year';
-    document.getElementById('basic-note').textContent   = 'saves ₹1,989 vs monthly';
-    document.getElementById('prem-price').textContent   = '₹19,999';
-    document.getElementById('prem-period').textContent  = '/year';
-    document.getElementById('prem-note').textContent    = 'saves ₹3,989 vs monthly';
-  }
-
-  document.getElementById('f-billing').value = cycle;
-}
-
-function openOnboard(plan) {
-  document.getElementById('f-plan').value = plan;
-  document.getElementById('onboard').scrollIntoView({ behavior: 'smooth' });
-}
-
-// ── Counter animation ────────────────────────────────────────────────────────
-function animateCounters() {
-  document.querySelectorAll('[data-target]').forEach(el => {
-    const target = +el.dataset.target;
-    let current  = 0;
-    const step   = target / 60;
-    const timer  = setInterval(() => {
-      current += step;
-      if (current >= target) { current = target; clearInterval(timer); }
-      el.textContent = Math.floor(current) + (target === 98 ? '%' : '+');
-    }, 25);
+  // ── Business type selector ──────────────────────────────────────────────
+  var selectedBizType = '';
+  document.querySelectorAll('.biz-type-opt').forEach(function (el) {
+    el.addEventListener('click', function () {
+      document.querySelectorAll('.biz-type-opt').forEach(function (o) { o.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedBizType = el.getAttribute('data-value');
+    });
   });
-}
 
-// Trigger counter when stats section visible
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) { animateCounters(); observer.disconnect(); } });
-}, { threshold: 0.4 });
-observer.observe(document.querySelector('[data-target]'));
+  // ── Pricing toggle ───────────────────────────────────────────────────────
+  var billingCycle = 'monthly';
+  var monthlyBtn = document.getElementById('toggle-monthly');
+  var yearlyBtn  = document.getElementById('toggle-yearly');
 
-// ── WhatsApp Chat Demo ───────────────────────────────────────────────────────
-const DEMO_RESPONSES = [
-  { trigger: ['hi', 'hello', 'hii', 'namaste', 'hey'],
-    reply: "Namaste! 😊 Main Priya hoon — aapki AI receptionist. Kya aap appointment book karna chahte hain? Ya services ke baare mein jaanna chahte hain?" },
-  { trigger: ['haircut', 'baal', 'hair', 'cut'],
-    reply: "✂️ Hamare haircut options:\n• Basic Cut — ₹200 (30 min)\n• Style Cut — ₹350 (45 min)\n• Premium + Wash — ₹550 (60 min)\n\nKaunsa chahiye aapko? 😊" },
-  { trigger: ['slot', 'time', 'appointment', 'book', 'kal', 'aaj', 'tomorrow', 'today', 'available'],
-    reply: "📅 Aaj ke available slots:\n• 2:00 PM — Rahul (Available ✓)\n• 4:30 PM — Suresh (Available ✓)\n• 6:00 PM — Rahul (Available ✓)\n\nKaunsa time suit karega?" },
-  { trigger: ['2', 'pm', '4', '6', 'confirm', 'book'],
-    reply: "Perfect! ✅ Slot lock kar rahi hoon...\n\n💳 *25% advance payment link:*\nhttps://rzp.io/demo-link\n\nPayment ke baad booking confirmed! 🎉 Invoice aapko WhatsApp pe milega." },
-  { trigger: ['price', 'kitna', 'cost', 'charge', 'rate', 'fees'],
-    reply: "💇 Hamare service rates:\n• Haircut — ₹200–550\n• Facial — ₹400–800\n• Hair Color — ₹600–1500\n• Head Massage — ₹150\n\nKisi specific service ke baare mein batayein! 😊" },
-];
-
-const DEFAULT_REPLY = "Samajh gayi! 😊 Aap seedha keh sakte hain — haircut, facial, appointment, ya prices. Main help karungi! 🙏";
-
-let chatHistory = [];
-let isTyping = false;
-
-function addBubble(text, type, animate = true) {
-  const body = document.getElementById('chat-body');
-  const now  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  const wrapper = document.createElement('div');
-  wrapper.style.animationDelay = animate ? '0ms' : '0ms';
-
-  const bubble = document.createElement('div');
-  bubble.className = `bubble ${type}`;
-  bubble.innerHTML = text.replace(/\n/g, '<br/>');
-
-  const time = document.createElement('div');
-  time.className = 'bubble-time';
-  time.textContent = now + (type === 'bot' ? ' ✓✓' : '');
-
-  wrapper.appendChild(bubble);
-  wrapper.appendChild(time);
-  body.appendChild(wrapper);
-  body.scrollTop = body.scrollHeight;
-}
-
-function showTyping() {
-  const body = document.getElementById('chat-body');
-  const el   = document.createElement('div');
-  el.id = 'typing-indicator';
-  el.className = 'bubble bot';
-  el.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
-  body.appendChild(el);
-  body.scrollTop = body.scrollHeight;
-}
-
-function hideTyping() {
-  const el = document.getElementById('typing-indicator');
-  if (el) el.remove();
-}
-
-function getBotReply(msg) {
-  const lower = msg.toLowerCase();
-  for (const item of DEMO_RESPONSES) {
-    if (item.trigger.some(t => lower.includes(t))) return item.reply;
+  function updatePricingDisplay() {
+    if (billingCycle === 'monthly') {
+      document.getElementById('basic-price').textContent = '₹999';
+      document.getElementById('basic-period').textContent = 'per month';
+      document.getElementById('premium-price').textContent = '₹1999';
+      document.getElementById('premium-period').textContent = 'per month';
+      monthlyBtn.classList.add('active'); yearlyBtn.classList.remove('active');
+    } else {
+      document.getElementById('basic-price').textContent = '₹9,999';
+      document.getElementById('basic-period').textContent = 'per year (save ₹1,989)';
+      document.getElementById('premium-price').textContent = '₹19,999';
+      document.getElementById('premium-period').textContent = 'per year (save ₹3,989)';
+      yearlyBtn.classList.add('active'); monthlyBtn.classList.remove('active');
+    }
+    document.getElementById('f-billing').value = billingCycle;
   }
-  return DEFAULT_REPLY;
-}
+  monthlyBtn.addEventListener('click', function () { billingCycle = 'monthly'; updatePricingDisplay(); });
+  yearlyBtn.addEventListener('click', function () { billingCycle = 'yearly'; updatePricingDisplay(); });
 
-function sendDemoMessage() {
-  if (isTyping) return;
-  const input = document.getElementById('chat-input');
-  const msg   = input.value.trim();
-  if (!msg) return;
-
-  addBubble(msg, 'user');
-  input.value = '';
-  isTyping = true;
-
-  showTyping();
-  const delay = 800 + Math.random() * 700;
-  setTimeout(() => {
-    hideTyping();
-    addBubble(getBotReply(msg), 'bot');
-    isTyping = false;
-  }, delay);
-}
-
-// Initial greeting
-setTimeout(() => {
-  addBubble("Namaste! 🙏 Main Priya hoon — Sharma Salon ki AI receptionist.\nKya main aapki koi madad kar sakti hoon? Book karna hai ya services dekhne hain?", 'bot', false);
-}, 400);
-
-// ── Onboard Form Submit ──────────────────────────────────────────────────────
-async function submitOnboard() {
-  const btn     = document.getElementById('submit-btn');
-  const errEl   = document.getElementById('form-error');
-  const successEl = document.getElementById('form-success');
-  const formEl  = document.getElementById('onboard-form');
-
-  const fields = {
-    business_name   : document.getElementById('f-biz-name').value.trim(),
-    business_type   : document.getElementById('f-biz-type').value,
-    owner_name      : document.getElementById('f-owner-name').value.trim(),
-    owner_phone     : document.getElementById('f-phone').value.trim(),
-    owner_email     : document.getElementById('f-email').value.trim(),
-    city            : document.getElementById('f-city').value.trim(),
-    address         : document.getElementById('f-address').value.trim(),
-    plan            : document.getElementById('f-plan').value,
-    billing_cycle   : document.getElementById('f-billing').value,
-    whatsapp_phone_id: '',  // Set by admin after Meta onboarding
+  window.selectPlan = function (plan) {
+    document.getElementById('f-plan').value = plan;
+    document.getElementById('onboard').scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Basic validation
-  const empty = Object.entries(fields).find(([k, v]) => k !== 'whatsapp_phone_id' && !v);
-  if (empty) {
-    errEl.textContent = `Please fill in: ${empty[0].replace(/_/g,' ')}`;
-    errEl.classList.remove('hidden');
-    return;
-  }
-  if (!/^\+91\d{10}$/.test(fields.owner_phone) && !/^\+\d{10,15}$/.test(fields.owner_phone)) {
-    errEl.textContent = 'Enter phone with country code, e.g. +919876543210';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  errEl.classList.add('hidden');
+  // ── Onboard form submit ──────────────────────────────────────────────────
+  document.getElementById('onboard-form').addEventListener('submit', function (e) {
+    e.preventDefault();
 
-  btn.disabled = true;
-  btn.textContent = 'Processing…';
+    var errorBox = document.getElementById('form-error-box');
+    errorBox.innerHTML = '';
 
-  try {
-    const res = await fetch('/api/v1/onboard/create-pending-vendor', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify(fields),
-    });
-    const data = await res.json();
-
-    if (res.ok) {
-      formEl.classList.add('hidden');
-      successEl.classList.remove('hidden');
-      if (data.payment_link) {
-        setTimeout(() => { window.location.href = data.payment_link; }, 1500);
-      }
-    } else {
-      errEl.textContent = data.detail || 'Registration failed. Please try again.';
-      errEl.classList.remove('hidden');
-      btn.disabled = false;
-      btn.textContent = 'Register & Get Payment Link →';
+    if (!selectedBizType) {
+      errorBox.innerHTML = '<div class="form-error">Please select a business type.</div>';
+      return;
     }
-  } catch (err) {
-    errEl.textContent = 'Network error. Please check your connection and try again.';
-    errEl.classList.remove('hidden');
-    btn.disabled = false;
-    btn.textContent = 'Register & Get Payment Link →';
+
+    var payload = {
+      business_name : document.getElementById('f-business-name').value.trim(),
+      owner_name    : document.getElementById('f-owner-name').value.trim(),
+      owner_phone   : document.getElementById('f-phone').value.trim(),
+      owner_email   : document.getElementById('f-email').value.trim(),
+      business_type : selectedBizType,
+      city          : document.getElementById('f-city').value.trim(),
+      address       : document.getElementById('f-address').value.trim(),
+      plan          : document.getElementById('f-plan').value,
+      billing_cycle : document.getElementById('f-billing').value,
+      whatsapp_phone_id: document.getElementById('f-phone-id').value.trim() || 'pending',
+    };
+
+    var submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Registering…';
+
+    fetch(API_BASE + '/api/v1/onboard/create-pending-vendor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Registration failed.');
+          return data;
+        });
+      })
+      .then(function (data) {
+        document.getElementById('onboard-form-wrap').style.display = 'none';
+        var successBox = document.getElementById('form-success-box');
+        successBox.style.display = 'block';
+        successBox.innerHTML =
+          '<div class="form-success">' +
+            '<div style="font-size:40px;margin-bottom:12px">🎉</div>' +
+            '<div style="font-size:18px;font-weight:700;margin-bottom:8px">Registration received!</div>' +
+            '<div style="font-size:13.5px;color:var(--text-soft);margin-bottom:20px">' + (data.message || '') + '</div>' +
+            (data.payment_link ? '<a href="' + data.payment_link + '" class="btn-primary" style="display:inline-block">Complete Payment →</a>' : '') +
+          '</div>';
+      })
+      .catch(function (err) {
+        errorBox.innerHTML = '<div class="form-error">' + err.message + '</div>';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Register & Get Payment Link →';
+      });
+  });
+
+  // ── WhatsApp demo chat animation ─────────────────────────────────────────
+  var demoChat = document.getElementById('demo-chat');
+  var script = [
+    { from: 'bot', text: 'Namaste! 😊 Main Priya hoon. Kya main aapki koi madad kar sakti hoon?' },
+    { from: 'user', text: 'Haircut book karni hai' },
+    { from: 'bot', text: 'Bilkul! Booking ke liye, aapka naam bata dein? 😊' },
+    { from: 'user', text: 'Ramesh' },
+    { from: 'bot', text: 'Dhanyavaad Ramesh! 😊 Booking link bhej rahi hoon — service, staff aur time choose kar lein. 🙏' },
+  ];
+  var i = 0;
+  function playNext() {
+    if (i >= script.length) { i = 0; setTimeout(playNext, 2000); return; }
+    var msg = script[i];
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble ' + msg.from;
+    bubble.textContent = msg.text;
+    demoChat.appendChild(bubble);
+    if (demoChat.children.length > 5) demoChat.removeChild(demoChat.firstChild);
+    i++;
+    setTimeout(playNext, 1600);
   }
-}
+  setTimeout(playNext, 600);
+
+  updatePricingDisplay();
+})();
 </script>
 </body>
 </html>

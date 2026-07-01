@@ -170,19 +170,26 @@ async def get_session(request: Request, session_token: str):
 # ── Update Session With Selection (called by Web App before payment) ─────────
 
 class UpdateSessionRequest(BaseModel):
-    service_id : str
-    slot_id    : str
+    service_ids : list[str]
+    slot_id     : str
 
 
 @router.patch("/{session_token}/select")
 @limiter.limit(LIMIT_NORMAL)
 async def select_service_slot(request: Request, session_token: str, body: UpdateSessionRequest):
     """
-    Customer ne service + slot choose kar liya web app mein.
+    Customer ne service(s) + slot choose kar liya web app mein.
     Yeh slot ko temporarily lock karega aur booking record banayega
     (status: pending_payment), phir Razorpay link generate karega.
+
+    Multi-service (cart-style) support: customer ek slot ke against
+    multiple services select kar sakta hai (e.g. haircut + shave,
+    ya cafe mein 2 items).
     """
     from routers.booking import _initiate_booking  # reuse existing logic
+
+    if not body.service_ids:
+        raise HTTPException(status_code=400, detail="At least one service must be selected.")
 
     db = get_db()
     session_ref = db.collection("booking_sessions").document(session_token)
@@ -197,17 +204,23 @@ async def select_service_slot(request: Request, session_token: str, body: Update
     client_doc = db.collection(Collections.CLIENTS).document(client_id).get()
     client_data = client_doc.to_dict()
 
-    # Service fetch karo
-    service_doc = (
+    # Sab selected services fetch karo
+    services_info = []
+    services_ref = (
         db.collection(Collections.CLIENTS)
         .document(client_id)
         .collection(Collections.SERVICES)
-        .document(body.service_id)
-        .get()
     )
-    if not service_doc.exists:
-        raise HTTPException(status_code=404, detail="Service not found.")
-    service_data = service_doc.to_dict()
+    for service_id in body.service_ids:
+        service_doc = services_ref.document(service_id).get()
+        if not service_doc.exists:
+            raise HTTPException(status_code=404, detail=f"Service not found: {service_id}")
+        service_data = service_doc.to_dict()
+        services_info.append({
+            "service_id": service_id,
+            "name"      : service_data.get("name", ""),
+            "price"     : service_data.get("price", 0),
+        })
 
     # Slot fetch karo by ID
     slot_doc = (
@@ -228,11 +241,7 @@ async def select_service_slot(request: Request, session_token: str, body: Update
         client_data=client_data,
         customer_phone=session["customer_phone"],
         slot_info=slot_data,
-        service_info={
-            "name" : service_data.get("name", ""),
-            "price": service_data.get("price", 0),
-            "staff": slot_data.get("staff_name", ""),
-        },
+        services_info=services_info,
     )
 
     if not result.get("success"):
