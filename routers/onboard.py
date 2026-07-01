@@ -301,7 +301,7 @@ async def connect_whatsapp_number(client_id: str, body: ConnectWhatsAppRequest):
     })
 
     # ── Regenerate QR so it now points at the client's own number ──────────────
-    from utils.qr_generator import generate_client_qr
+    from utils.qr_generator import generate_client_qr # type: ignore
 
     qr_url = ""
     try:

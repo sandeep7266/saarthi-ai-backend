@@ -4,6 +4,7 @@ Cryptographically verified Razorpay Webhook listener.
 Handles B2B onboarding confirmation and B2C booking deposit confirmations.
 """
 
+import json
 import os
 import hmac
 import hashlib
@@ -102,11 +103,14 @@ async def razorpay_webhook(
         logger.warning("Razorpay webhook: invalid signature rejected.")
         raise HTTPException(status_code=400, detail="Invalid webhook signature.")
 
-    payload    = await request.json()
+    payload    = json.loads(raw_body)
     event      = payload.get("event", "")
-    entity     = payload.get("payload", {})
+   #entity     = payload.get("payload", {})
     event_id   = payload.get("id", "")  # Razorpay unique event ID
-
+    if "payment_link" in payload:
+        entity = payload["payment_link"].get("entity", {})
+    else:
+        entity = payload.get("payment", {}).get("entity", {})
     logger.info("Razorpay webhook received: event=%s id=%s", event, event_id)
 
     # ── Idempotency guard: skip already-processed events ──────────────────────
@@ -218,7 +222,7 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
     # Points at the client's OWN WhatsApp number once they've connected one in
     # Meta. Until then it falls back to owner_phone so the QR is still usable
     # (they can swap it once their dedicated business number is live).
-    from utils.qr_generator import generate_client_qr
+    from utils.qr_generator import generate_client_qr # type: ignore
 
     qr_target_number = client_data.get("whatsapp_business_number") or owner_phone
     qr_url = ""
