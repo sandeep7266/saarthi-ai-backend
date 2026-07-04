@@ -109,7 +109,10 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
             from routers.master_onboarding import handle_onboarding_message
-            await handle_onboarding_message(
+            
+            # Ye task ab background mein chalega, aur server turant reply dega
+            background_tasks.add_task(
+                handle_onboarding_message,
                 phone_number_id=phone_number_id,
                 from_number=from_number,
                 msg_body=msg_body,
