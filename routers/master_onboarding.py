@@ -301,7 +301,8 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
     id_hint = "12-digit Aadhaar number" if doc_type == "aadhaar" else "10-character alphanumeric PAN number"
     prompt = (
         f"Ye ek {doc_type.upper()} card ki photo hai. Isse SIRF ye JSON extract karo, kuch aur nahi "
-        f'(no markdown): {{"name": "<card par likha poora naam>", "id_number": "<{id_hint}>"}}. '
+        f'(no markdown, no code fences, no preamble — just raw JSON): '
+        f'{{"name": "<card par likha poora naam>", "id_number": "<{id_hint}>"}}. '
         "Agar clearly padh nahi paa rahe ho, dono fields empty string rakho."
     )
 
@@ -324,17 +325,33 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
                     }],
                     "temperature": 0.1,
                     "max_tokens": 200,
-                    "response_format": {"type": "json_object"},
+                    # NOTE: response_format=json_object is deliberately omitted here —
+                    # several Groq vision models return 400 when JSON mode is combined
+                    # with image content. We rely on the prompt instructions instead,
+                    # plus markdown-fence-stripping below as a safety net.
                 },
             )
             resp.raise_for_status()
             raw_text = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        logger.error("Groq vision OCR failed (%s): %s", doc_type, e)
+        error_detail = ""
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                error_detail = e.response.text[:500]
+            except Exception:
+                pass
+        logger.error("Groq vision OCR failed (%s): %s | response=%s", doc_type, e, error_detail)
         return None
 
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(cleaned)
     except Exception as e:
         logger.error("Groq OCR JSON parse failed: %s | raw=%s", e, raw_text[:200])
         return None
