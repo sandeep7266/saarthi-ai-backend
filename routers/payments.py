@@ -214,6 +214,31 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
         client_id, plan, sub_end.isoformat()
     )
 
+    # ── Create the client's first dashboard login (admin account) ──────────────
+    # There is no other way for a brand-new client to get dashboard access —
+    # /auth/create-staff requires an existing admin JWT, which doesn't exist
+    # yet for them. This is the one place a first account can be created.
+    import secrets
+    import string
+    from routers.auth import hash_password
+
+    owner_email = client_data.get("owner_email", "")
+    generated_password = "".join(
+        secrets.choice(string.ascii_letters + string.digits) for _ in range(10)
+    )
+
+    db.collection(Collections.USERS).add({
+        "client_id"     : client_id,
+        "name"          : client_data.get("owner_name", ""),
+        "email"         : owner_email,
+        "password_hash" : hash_password(generated_password),
+        "role"          : "admin",
+        "is_active"     : True,
+        "created_at"    : now,
+        "created_by"    : "system_auto_onboarding",
+    })
+    logger.info("First admin account created for client %s: %s", client_id, owner_email)
+
     # ── Generate client's customer-facing QR code ──────────────────────────────
     # Points at the client's OWN WhatsApp number once they've connected one in
     # Meta. Until then it falls back to owner_phone so the QR is still usable
@@ -253,10 +278,17 @@ async def _handle_b2b_onboarding_payment(entity: dict) -> None:
     # The client's own Meta number isn't connected yet at this point, so we
     # send from the company's number — same number their onboarding chat ran on.
     company_phone_id = os.getenv("COMPANY_WHATSAPP_PHONE_ID", "")
+    dashboard_url = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
     client_msg = (
         f"🎉 *Welcome to Saarthi-AI, {business_name}!*\n\n"
         f"Plan: *{plan.title()} ({billing_cycle})*\n"
         f"Valid till: *{sub_end.strftime('%d %b %Y')}*\n\n"
+        f"*Aapka Dashboard Login:*\n"
+        f"🔗 {dashboard_url}\n"
+        f"👤 Client ID: `{client_id}`\n"
+        f"✉️ Email: {owner_email}\n"
+        f"🔑 Password: `{generated_password}`\n"
+        f"(Login karke password change kar lein settings mein)\n\n"
         f"Aapka QR code neeche hai — ise apne shop mein print/display karein. "
         f"Customers isse scan karke directly aapke WhatsApp pe booking shuru kar sakenge.\n\n"
         f"Next step: apna business WhatsApp number Meta se connect karein "
