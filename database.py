@@ -70,3 +70,4 @@ class Collections:
     SLOTS      = "slots"
     INVOICES   = "invoices"
     AUDIT_LOGS = "audit_logs"
+    PLATFORM_ADMINS = "platform_admins"  # Saarthi-AI's own team — separate from tenant users

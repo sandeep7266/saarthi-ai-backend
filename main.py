@@ -33,6 +33,7 @@ from routers.bookings_api import router as bookings_router
 from routers.notifications import router as notifications_router
 from routers.booking_session import router as booking_session_router
 from routers.dashboard_config import router as dashboard_config_router
+from routers.platform_admin import router as platform_admin_router
 from utils.rate_limiter import limiter
 from utils.booking_expiry import expire_stale_pending_bookings
 
@@ -202,6 +203,7 @@ async def serve_booking_app():
 app.include_router(notifications_router)
 app.include_router(booking_session_router)
 app.include_router(dashboard_config_router)
+app.include_router(platform_admin_router)
 
 # ── Health endpoints ───────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])

@@ -5,10 +5,12 @@ JWT management, Staff/Admin login handlers for Saarthi-AI.
 
 import os
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
+import httpx
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from utils.rate_limiter import limiter, LIMIT_STRICT, LIMIT_NORMAL
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -19,6 +21,12 @@ from database import get_db, Collections
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
+
+META_ACCESS_TOKEN   = os.getenv("META_ACCESS_TOKEN", "")
+META_API_VERSION    = os.getenv("META_API_VERSION", "v19.0")
+COMPANY_WHATSAPP_PHONE_ID = os.getenv("COMPANY_WHATSAPP_PHONE_ID", "")
+OTP_TTL_MINUTES     = 10
+
 
 JWT_SECRET      = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PRODUCTION_USE_256_BIT_SECRET")
 JWT_ALGORITHM   = "HS256"
@@ -47,6 +55,25 @@ class CreateStaffRequest(BaseModel):
     email: EmailStr
     password: str
     role: str  # "admin" | "staff"
+
+class PlatformLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class PlatformTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str = "platform_admin"
+
+class ForgotPasswordRequest(BaseModel):
+    client_id: str
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    client_id: str
+    email: str
+    otp: str
+    new_password: str
 
 
 # ── JWT Utilities ──────────────────────────────────────────────────────────────
@@ -79,6 +106,18 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """Dependency: enforce admin role."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    return current_user
+
+
+def require_platform_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Dependency: enforce Saarthi-AI's own platform_admin role — completely
+    separate from tenant "admin"/"staff" roles. A tenant admin token will
+    never satisfy this, since it carries role="admin" and a client_id scope,
+    not role="platform_admin".
+    """
+    if current_user.get("role") != "platform_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform admin access required.")
     return current_user
 
 
@@ -163,6 +202,147 @@ async def login(request: Request, body: LoginRequest):
         client_id=body.client_id,
         tenant_status=tenant_status,
     )
+
+
+@router.post("/platform-login", response_model=PlatformTokenResponse)
+@limiter.limit(LIMIT_STRICT)
+async def platform_login(request: Request, body: PlatformLoginRequest):
+    """
+    Authenticate a Saarthi-AI platform admin (Sandeep / internal team).
+    Completely separate from tenant login — looked up in Collections.PLATFORM_ADMINS,
+    never Collections.USERS, so tenant accounts can never satisfy this even by accident.
+    """
+    db = get_db()
+    admins_ref = (
+        db.collection(Collections.PLATFORM_ADMINS)
+        .where("email", "==", body.email)
+        .limit(1)
+        .get()
+    )
+
+    if not admins_ref:
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
+
+    admin_doc = admins_ref[0].to_dict()
+
+    if not verify_password(body.password, admin_doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid credentials.")
+
+    if not admin_doc.get("is_active", False):
+        raise HTTPException(status_code=403, detail="Account disabled.")
+
+    token_data = {
+        "sub" : admin_doc["email"],
+        "user_id": admins_ref[0].id,
+        "role": "platform_admin",
+    }
+    access_token = create_access_token(token_data)
+    logger.info("Platform admin login: %s", body.email)
+
+    return PlatformTokenResponse(access_token=access_token)
+
+
+@router.post("/forgot-password")
+@limiter.limit(LIMIT_STRICT)
+async def forgot_password(request: Request, body: ForgotPasswordRequest):
+    """
+    Sends a 6-digit OTP to the client's owner_phone via WhatsApp (no email
+    service exists in this stack yet, so WhatsApp is the reset channel).
+    Always returns a generic success message regardless of whether the
+    account exists, to avoid leaking which emails are registered.
+    """
+    db = get_db()
+    users_ref = (
+        db.collection(Collections.USERS)
+        .where("client_id", "==", body.client_id)
+        .where("email", "==", body.email)
+        .limit(1)
+        .get()
+    )
+
+    generic_response = {"message": "Agar account exist karta hai, OTP WhatsApp par bhej diya gaya hai."}
+
+    if not users_ref:
+        logger.info("Password reset requested for unknown user: %s / %s", body.client_id, body.email)
+        return generic_response
+
+    user_ref = users_ref[0].reference
+    otp = f"{secrets.randbelow(1000000):06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)
+
+    user_ref.update({
+        "reset_otp"        : otp,
+        "reset_otp_expires": expires_at,
+    })
+
+    client_doc = db.collection(Collections.CLIENTS).document(body.client_id).get()
+    owner_phone = client_doc.to_dict().get("owner_phone", "") if client_doc.exists else ""
+
+    if owner_phone and COMPANY_WHATSAPP_PHONE_ID:
+        await _send_otp_whatsapp(owner_phone, otp)
+    else:
+        logger.error("Could not send reset OTP — missing owner_phone or COMPANY_WHATSAPP_PHONE_ID for client %s",
+                     body.client_id)
+
+    return generic_response
+
+
+@router.post("/reset-password")
+@limiter.limit(LIMIT_STRICT)
+async def reset_password(request: Request, body: ResetPasswordRequest):
+    db = get_db()
+    users_ref = (
+        db.collection(Collections.USERS)
+        .where("client_id", "==", body.client_id)
+        .where("email", "==", body.email)
+        .limit(1)
+        .get()
+    )
+
+    if not users_ref:
+        raise HTTPException(status_code=400, detail="Invalid OTP or account.")
+
+    user_doc = users_ref[0]
+    user_data = user_doc.to_dict()
+
+    stored_otp = user_data.get("reset_otp", "")
+    expires_at = user_data.get("reset_otp_expires")
+
+    if not stored_otp or stored_otp != body.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP.")
+
+    if not expires_at or datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
+
+    user_doc.reference.update({
+        "password_hash"    : hash_password(body.new_password),
+        "reset_otp"         : "",
+        "reset_otp_expires" : None,
+    })
+    logger.info("Password reset successful: %s / %s", body.client_id, body.email)
+
+    return {"message": "Password reset successful. Aap ab naye password se login kar sakte hain."}
+
+
+async def _send_otp_whatsapp(to: str, otp: str) -> None:
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{COMPANY_WHATSAPP_PHONE_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to"  : to,
+        "type": "text",
+        "text": {"body": f"Aapka Saarthi-AI password reset OTP hai: *{otp}*\n\n"
+                          f"Ye {OTP_TTL_MINUTES} minute mein expire ho jaayega. Kisi ke saath share na karein."},
+    }
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("Failed to send reset OTP via WhatsApp → %s: %s", to, e)
 
 
 @router.post("/create-staff", status_code=201)
