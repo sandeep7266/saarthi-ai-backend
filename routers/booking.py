@@ -20,7 +20,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-
+from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
 from database import get_db, Collections
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,8 @@ async def whatsapp_verify(
 # ── Main Incoming Message Handler (POST) ──────────────────────────────────────
 
 @router.post("/whatsapp")
-async def whatsapp_incoming(request: Request):
+#async def whatsapp_incoming(request: Request, @router.post("/whatsapp")
+async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks):
     """
     Ingestion gateway for Meta WhatsApp Cloud API messages.
     NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
@@ -107,9 +108,6 @@ async def whatsapp_incoming(request: Request):
         # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
-            # No active client owns this phone_number_id — this is either a
-            # brand-new prospective client, or a message on the company's own
-            # onboarding number. Hand off to the Master Onboarding Bot.
             from routers.master_onboarding import handle_onboarding_message
             await handle_onboarding_message(
                 phone_number_id=phone_number_id,
@@ -120,7 +118,6 @@ async def whatsapp_incoming(request: Request):
                 media_type=media_type,
             )
             return {"status": "ok"}
-
         if client_data.get("status") != "active":
             return {"status": "ok"}
 
