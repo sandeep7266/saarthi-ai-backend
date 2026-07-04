@@ -82,6 +82,9 @@ async def whatsapp_incoming(request: Request):
             if interactive.get("type") == "button_reply":
                 msg_body       = interactive["button_reply"]["title"]
                 interactive_id = interactive["button_reply"]["id"]
+            elif interactive.get("type") == "list_reply":
+                msg_body       = interactive["list_reply"]["title"]
+                interactive_id = interactive["list_reply"]["id"]
         else:
             _send_whatsapp_text(phone_number_id, from_number,
                 "Sorry, main abhi sirf text messages samajh sakti hoon. 😊")
