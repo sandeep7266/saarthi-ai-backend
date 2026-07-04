@@ -46,11 +46,13 @@ META_ACCESS_TOKEN   = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION    = os.getenv("META_API_VERSION", "v19.0")
 COMPANY_ADMIN_PHONE = os.getenv("COMPANY_ADMIN_PHONE", "")  # where "new client" alerts go
 GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL          = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-# NOTE: verify the exact current vision-capable model slug against Groq's docs
-# (https://console.groq.com/docs/models) before deploying — vision model names
-# change more often than the text model.
-GROQ_VISION_MODEL   = os.getenv("GROQ_VISION_MODEL", "llama-3.2-90b-vision-preview")
+GROQ_MODEL          = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+# qwen3.6-27b is multimodal (text + vision), so the same model covers both the
+# onboarding conversation and KYC document OCR — one model to keep an eye on
+# instead of two. Verified against console.groq.com/docs/deprecations (July 2026):
+# llama-3.3-70b-versatile shuts down 08/16/26, llama-4-scout shuts down 07/17/26.
+# Re-check that page if either of these calls starts failing again.
+GROQ_VISION_MODEL   = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 
 ONBOARDING_SESSIONS = "onboarding_sessions"  # Firestore collection (top-level)
 

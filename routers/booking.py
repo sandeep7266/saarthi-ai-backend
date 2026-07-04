@@ -31,7 +31,9 @@ WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "saarthi_verify_token
 META_ACCESS_TOKEN     = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION      = os.getenv("META_API_VERSION", "v19.0")
 GROQ_API_KEY          = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL            = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL            = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+# llama-3.3-70b-versatile is being shut down by Groq on 08/16/26 — switched to
+# qwen3.6-27b (verified against console.groq.com/docs/deprecations, July 2026).
 APP_BASE_URL          = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
 
 
