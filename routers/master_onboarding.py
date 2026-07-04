@@ -27,14 +27,18 @@ This module is called from routers/booking.py's whatsapp_incoming() handler
 whenever _resolve_tenant() returns no match.
 """
 
+import base64
+import difflib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import httpx
 
 from database import get_db
+from utils.invoice_generator import PLAN_FEATURES
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,10 @@ META_API_VERSION    = os.getenv("META_API_VERSION", "v19.0")
 COMPANY_ADMIN_PHONE = os.getenv("COMPANY_ADMIN_PHONE", "")  # where "new client" alerts go
 GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL          = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# NOTE: verify the exact current vision-capable model slug against Groq's docs
+# (https://console.groq.com/docs/models) before deploying — vision model names
+# change more often than the text model.
+GROQ_VISION_MODEL   = os.getenv("GROQ_VISION_MODEL", "llama-3.2-90b-vision-preview")
 
 ONBOARDING_SESSIONS = "onboarding_sessions"  # Firestore collection (top-level)
 
@@ -74,6 +82,10 @@ CONFIRM_OPTIONS = [
 AI_FIELDS = ["owner_name", "business_name", "owner_email", "address", "city"]
 # GST is optional, collected by AI too but never blocks progress
 ALL_REQUIRED_FOR_PAYMENT = AI_FIELDS + ["business_type", "plan", "billing_cycle"]
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+GST_PATTERN   = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z\d]$")
+PHONE_DIGITS_PATTERN = re.compile(r"^\d{10,15}$")
 
 SYSTEM_PROMPT_TEMPLATE = """Tum Saarthi-AI ki onboarding assistant ho, jo WhatsApp par naye business owners ko \
 register karti ho. Tumhara tone warm, friendly Hinglish hai. Chhote, natural messages likho (2-3 lines).
@@ -111,6 +123,8 @@ async def handle_onboarding_message(
     from_number: str,
     msg_body: str,
     interactive_id: str = "",
+    media_id: str = "",
+    media_type: str = "",
 ) -> None:
     db = get_db()
     session_ref = db.collection(ONBOARDING_SESSIONS).document(from_number)
@@ -132,7 +146,14 @@ async def handle_onboarding_message(
     collected      = session.get("collected", {})
     pending_choice = session.get("pending_choice", "")
 
-    # ── Path 1: We're waiting on a button tap (business_type/plan/billing/confirm) ──
+    # ── Path 1a: We're waiting on a KYC document upload ─────────────────────────
+    if pending_choice in ("upload_aadhaar", "upload_pan"):
+        await _handle_kyc_upload(
+            phone_number_id, from_number, session_ref, collected, pending_choice, media_id
+        )
+        return
+
+    # ── Path 1b: We're waiting on a button tap (business_type/plan/billing/confirm) ──
     if pending_choice:
         handled = await _handle_pending_choice(
             phone_number_id, from_number, session_ref, session, pending_choice, interactive_id
@@ -179,6 +200,146 @@ def _create_session(session_ref) -> dict:
     }
     session_ref.set(session)
     return session
+
+
+# ── KYC document upload handling ────────────────────────────────────────────────
+
+async def _handle_kyc_upload(
+    phone_number_id, to, session_ref, collected, pending_choice, media_id
+) -> None:
+    doc_label = "Aadhaar card" if pending_choice == "upload_aadhaar" else "PAN card"
+
+    if not media_id:
+        await _send_text(
+            phone_number_id, to,
+            f"Kripya {doc_label} ki ek photo bhejein (image ya PDF ke roop mein) 📄"
+        )
+        return
+
+    image_bytes = await _download_whatsapp_media(media_id)
+    if not image_bytes:
+        await _send_text(
+            phone_number_id, to,
+            f"{doc_label} download nahi ho payi. Ek baar phir bhejne ki koshish karein 🙏"
+        )
+        return
+
+    doc_type = "aadhaar" if pending_choice == "upload_aadhaar" else "pan"
+    extracted = await _extract_id_document(image_bytes, doc_type)
+
+    if extracted is None:
+        await _send_text(
+            phone_number_id, to,
+            f"{doc_label} clearly padh nahi payi — kripya saaf, achi roshni mein photo bhejein 🙏"
+        )
+        return
+
+    if doc_type == "aadhaar":
+        aadhaar_number = extracted.get("id_number", "").replace(" ", "")
+        if len(aadhaar_number) < 4:
+            await _send_text(phone_number_id, to,
+                "Aadhaar number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
+            return
+        collected["aadhaar_last4"] = aadhaar_number[-4:]
+    else:
+        pan_number = extracted.get("id_number", "").replace(" ", "").upper()
+        if len(pan_number) != 10:
+            await _send_text(phone_number_id, to,
+                "PAN number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
+            return
+        collected["pan_number"] = pan_number
+
+    # ── Name matching against owner_name (fuzzy, case-insensitive) ─────────────
+    doc_name   = (extracted.get("name") or "").strip().lower()
+    owner_name = str(collected.get("owner_name", "")).strip().lower()
+    if doc_name and owner_name:
+        similarity = difflib.SequenceMatcher(None, doc_name, owner_name).ratio()
+        name_matches = similarity >= 0.6
+        # Only downgrade the flag, never upgrade — one mismatched doc should
+        # still show the warning even if the other doc matched fine.
+        collected["kyc_name_match"] = collected.get("kyc_name_match", True) and name_matches
+
+    session_ref.update({"collected": collected, "pending_choice": ""})
+    await _send_text(phone_number_id, to, f"{doc_label} mil gaya, dhanyavaad! ✅")
+    await _advance(phone_number_id, to, session_ref, collected)
+
+
+async def _download_whatsapp_media(media_id: str) -> bytes:
+    """Meta's media API is two-step: fetch a short-lived URL, then fetch the bytes."""
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}"}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            meta_resp = await client.get(
+                f"https://graph.facebook.com/{META_API_VERSION}/{media_id}", headers=headers
+            )
+            meta_resp.raise_for_status()
+            media_url = meta_resp.json().get("url", "")
+            if not media_url:
+                return b""
+
+            file_resp = await client.get(media_url, headers=headers)
+            file_resp.raise_for_status()
+            return file_resp.content
+    except Exception as e:
+        logger.error("WhatsApp media download failed (media_id=%s): %s", media_id, e)
+        return b""
+
+
+async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None:
+    """
+    Uses a Groq vision model to OCR the ID card and extract just the name and
+    ID number as JSON. Returns None on any failure (caller re-prompts the user
+    rather than guessing).
+    """
+    if not GROQ_API_KEY:
+        logger.error("GROQ_API_KEY not configured — cannot run KYC OCR.")
+        return None
+
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
+    id_hint = "12-digit Aadhaar number" if doc_type == "aadhaar" else "10-character alphanumeric PAN number"
+    prompt = (
+        f"Ye ek {doc_type.upper()} card ki photo hai. Isse SIRF ye JSON extract karo, kuch aur nahi "
+        f'(no markdown): {{"name": "<card par likha poora naam>", "id_number": "<{id_hint}>"}}. '
+        "Agar clearly padh nahi paa rahe ho, dono fields empty string rakho."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type" : "application/json",
+                },
+                json={
+                    "model": GROQ_VISION_MODEL,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+                        ],
+                    }],
+                    "temperature": 0.1,
+                    "max_tokens": 200,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+            resp.raise_for_status()
+            raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        logger.error("Groq vision OCR failed (%s): %s", doc_type, e)
+        return None
+
+    try:
+        parsed = json.loads(raw_text)
+    except Exception as e:
+        logger.error("Groq OCR JSON parse failed: %s | raw=%s", e, raw_text[:200])
+        return None
+
+    if not parsed.get("id_number"):
+        return None
+    return parsed
 
 
 # ── Button-response handling ────────────────────────────────────────────────────
@@ -241,7 +402,7 @@ async def _resend_choice(phone_number_id, to, choice) -> None:
             "Choose Type", BUSINESS_TYPES,
         )
     elif choice == "plan":
-        await _send_buttons(phone_number_id, to, "Kaunsa plan chahiye?", _as_buttons(PLAN_OPTIONS))
+        await _send_buttons(phone_number_id, to, _plan_comparison_text(), _as_buttons(PLAN_OPTIONS))
     elif choice == "billing_cycle":
         await _send_buttons(phone_number_id, to, "Billing cycle choose karein:", _as_buttons(BILLING_OPTIONS))
 
@@ -252,6 +413,29 @@ async def _advance(phone_number_id, to, session_ref, collected: dict) -> None:
     for field in AI_FIELDS:
         if not str(collected.get(field, "")).strip():
             return  # AI still collecting free-text fields; nothing more to do this turn
+
+    email = str(collected.get("owner_email", "")).strip()
+    if not EMAIL_PATTERN.match(email):
+        collected["owner_email"] = ""
+        session_ref.update({"collected": collected})
+        await _send_text(
+            phone_number_id, to,
+            f"'{email}' ek valid email nahi lag raha. Kripya sahi email address bhejein 🙏"
+        )
+        return
+
+    gst = str(collected.get("gst_number", "")).strip().upper()
+    if gst and not GST_PATTERN.match(gst):
+        collected["gst_number"] = ""
+        session_ref.update({"collected": collected})
+        await _send_text(
+            phone_number_id, to,
+            f"'{gst}' ek valid GST number nahi lag raha (15 characters hone chahiye, jaise "
+            f"27AAPFU0939F1ZV). Kripya sahi GST number bhejein, ya 'skip' likhein 🙏"
+        )
+        return
+    elif gst:
+        collected["gst_number"] = gst  # store normalized (uppercase) form
 
     if not collected.get("business_type"):
         session_ref.update({"pending_choice": "business_type"})
@@ -264,12 +448,27 @@ async def _advance(phone_number_id, to, session_ref, collected: dict) -> None:
 
     if not collected.get("plan"):
         session_ref.update({"pending_choice": "plan"})
-        await _send_buttons(phone_number_id, to, "Kaunsa plan chahiye?", _as_buttons(PLAN_OPTIONS))
+        await _send_buttons(phone_number_id, to, _plan_comparison_text(), _as_buttons(PLAN_OPTIONS))
         return
 
     if not collected.get("billing_cycle"):
         session_ref.update({"pending_choice": "billing_cycle"})
         await _send_buttons(phone_number_id, to, "Billing cycle choose karein:", _as_buttons(BILLING_OPTIONS))
+        return
+
+    if not collected.get("aadhaar_last4"):
+        session_ref.update({"pending_choice": "upload_aadhaar"})
+        await _send_text(
+            phone_number_id, to,
+            "KYC ke liye Aadhaar card ki photo bhejein 📄 (front side, saaf aur clear).\n"
+            "Note: Hum sirf verification ke liye use karte hain — poora Aadhaar number save nahi hota, "
+            "sirf last 4 digits."
+        )
+        return
+
+    if not collected.get("pan_number"):
+        session_ref.update({"pending_choice": "upload_pan"})
+        await _send_text(phone_number_id, to, "Ab PAN card ki photo bhejein 📄 (saaf aur clear).")
         return
 
     # Everything present — final confirmation gate
@@ -281,14 +480,28 @@ def _confirm_summary_text(collected: dict) -> str:
     business_type_label = dict(BUSINESS_TYPES).get(collected.get("business_type", ""), collected.get("business_type", ""))
     plan_label = dict(PLAN_OPTIONS).get(collected.get("plan", ""), collected.get("plan", ""))
     billing_label = dict(BILLING_OPTIONS).get(collected.get("billing_cycle", ""), collected.get("billing_cycle", ""))
+    kyc_line = f"🪪 Aadhaar (last 4): {collected.get('aadhaar_last4','')} | PAN: {collected.get('pan_number','')}"
+    if not collected.get("kyc_name_match", True):
+        kyc_line += "\n⚠️ Naam thoda match nahi hua documents se — hamari team manually verify karegi."
     return (
         "Ek baar confirm kar lete hain:\n\n"
         f"👤 {collected.get('owner_name','')}\n"
         f"🏪 {collected.get('business_name','')} ({business_type_label})\n"
         f"📍 {collected.get('address','')}, {collected.get('city','')}\n"
         f"✉️ {collected.get('owner_email','')}\n"
-        f"💳 {plan_label} — {billing_label}\n\n"
+        f"💳 {plan_label} — {billing_label}\n"
+        f"{kyc_line}\n\n"
         "Sab sahi hai?"
+    )
+
+
+def _plan_comparison_text() -> str:
+    basic_feats   = "\n".join(f"• {f}" for f in PLAN_FEATURES.get("basic", []))
+    premium_feats = "\n".join(f"• {f}" for f in PLAN_FEATURES.get("premium", []))
+    return (
+        "Kaunsa plan chahiye? Dono ke features neeche hain:\n\n"
+        f"*💠 Basic — ₹999/mo*\n{basic_feats}\n\n"
+        f"*✨ Premium — ₹1999/mo*\n{premium_feats}"
     )
 
 
@@ -306,8 +519,17 @@ def _validate_collected(collected: dict) -> bool:
         return False
     if collected.get("billing_cycle") not in dict(BILLING_OPTIONS):
         return False
-    email = str(collected.get("owner_email", ""))
-    if "@" not in email or "." not in email.split("@")[-1]:
+    email = str(collected.get("owner_email", "")).strip()
+    if not EMAIL_PATTERN.match(email):
+        return False
+    gst = str(collected.get("gst_number", "")).strip().upper()
+    if gst and not GST_PATTERN.match(gst):
+        return False
+    # KYC docs must have been processed (even if name mismatch — that's a
+    # manual-review flag, not a hard block), but the fields must exist.
+    if not str(collected.get("aadhaar_last4", "")).strip():
+        return False
+    if not str(collected.get("pan_number", "")).strip():
         return False
     return True
 
@@ -373,6 +595,15 @@ async def _finalize_and_send_payment_link(phone_number_id: str, to: str, collect
     )
 
     owner_phone = to if to.startswith("+") else f"+{to}"
+    phone_digits = re.sub(r"\D", "", owner_phone)
+    if not PHONE_DIGITS_PATTERN.match(phone_digits):
+        logger.error("Onboarding finalize: invalid phone digits: %s", phone_digits)
+        await _send_text(
+            phone_number_id, to,
+            "Maafi chahti hoon, aapka phone number format sahi nahi lag raha. "
+            "Support se contact karein: support@saarthi-ai.in 🙏"
+        )
+        return
 
     try:
         body = OnboardRequest(
@@ -386,6 +617,9 @@ async def _finalize_and_send_payment_link(phone_number_id: str, to: str, collect
             plan              = PlanTier(collected["plan"]),
             billing_cycle     = BillingCycle(collected["billing_cycle"]),
             whatsapp_phone_id = "",  # set later by client via /connect-whatsapp
+            aadhaar_last4     = collected.get("aadhaar_last4", ""),
+            pan_number        = collected.get("pan_number", ""),
+            kyc_name_match    = collected.get("kyc_name_match", True),
         )
     except Exception as e:
         logger.error("Onboarding finalize validation failed: %s", e)
@@ -424,11 +658,14 @@ async def _finalize_and_send_payment_link(phone_number_id: str, to: str, collect
     )
 
     if COMPANY_ADMIN_PHONE:
+        kyc_flag = "\n⚠️ KYC NAME MISMATCH — please review manually." if not collected.get("kyc_name_match", True) else ""
         await _send_text(
             phone_number_id, COMPANY_ADMIN_PHONE,
             f"🆕 New client started onboarding:\n"
             f"{collected['business_name']} ({collected['business_type']})\n"
             f"Owner: {collected['owner_name']} | {owner_phone}\n"
+            f"Aadhaar (last4): {collected.get('aadhaar_last4','')} | PAN: {collected.get('pan_number','')}"
+            f"{kyc_flag}\n"
             f"Awaiting payment confirmation."
         )
 

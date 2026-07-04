@@ -94,6 +94,9 @@ class OnboardRequest(BaseModel):
     plan           : PlanTier = Field(..., description="basic (₹999/mo) or premium (₹1999/mo)")
     billing_cycle  : BillingCycle
     whatsapp_phone_id: str = Field(..., description="Meta WhatsApp Cloud API Phone Number ID for this business")
+    aadhaar_last4  : str = Field("", description="Last 4 digits only — full Aadhaar number is never stored")
+    pan_number     : str = Field("", description="PAN number extracted from uploaded PAN card")
+    kyc_name_match : bool = Field(True, description="Whether OCR-extracted document name matched owner_name; False needs manual review")
 
 class OnboardResponse(BaseModel):
     client_id     : str
@@ -168,6 +171,10 @@ async def _create_pending_vendor_core(body: OnboardRequest) -> OnboardResponse:
         "billing_cycle"        : body.billing_cycle.value,
         "whatsapp_phone_id"    : body.whatsapp_phone_id,
         "whatsapp_business_number": "",  # E.164 dialable number for QR (set later via /connect-whatsapp)
+        "aadhaar_last4"        : body.aadhaar_last4,
+        "pan_number"           : body.pan_number,
+        "kyc_name_match"       : body.kyc_name_match,
+        "kyc_review_needed"    : not body.kyc_name_match,
         "status"               : "inactive",
         "razorpay_sub_id"      : None,
         "razorpay_payment_link_id": None,

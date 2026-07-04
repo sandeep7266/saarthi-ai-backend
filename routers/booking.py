@@ -74,6 +74,8 @@ async def whatsapp_incoming(request: Request):
         msg_type    = msg.get("type", "")
         msg_body    = ""
         interactive_id = ""
+        media_id    = ""
+        media_type  = ""
 
         if msg_type == "text":
             msg_body = msg.get("text", {}).get("body", "").strip()
@@ -85,6 +87,10 @@ async def whatsapp_incoming(request: Request):
             elif interactive.get("type") == "list_reply":
                 msg_body       = interactive["list_reply"]["title"]
                 interactive_id = interactive["list_reply"]["id"]
+        elif msg_type in ("image", "document"):
+            media_id   = msg.get(msg_type, {}).get("id", "")
+            media_type = msg_type
+            msg_body   = f"[{msg_type} uploaded]"  # placeholder so it isn't treated as empty
         else:
             _send_whatsapp_text(phone_number_id, from_number,
                 "Sorry, main abhi sirf text messages samajh sakti hoon. 😊")
@@ -108,6 +114,8 @@ async def whatsapp_incoming(request: Request):
                 from_number=from_number,
                 msg_body=msg_body,
                 interactive_id=interactive_id,
+                media_id=media_id,
+                media_type=media_type,
             )
             return {"status": "ok"}
 
