@@ -348,16 +348,31 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:]
+       # --- START REPLACEMENT ---
+    cleaned = raw_text.strip()
+    
+    # 1. Strip the <think>...</think> blocks added by reasoning models
+    if "<think>" in cleaned:
+        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+
+    # 2. Strip markdown fences if the model wrapped the JSON
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
         cleaned = cleaned.strip()
+        
+    # 3. Robust fallback to extract exactly the JSON dictionary
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if match:
+        cleaned = match.group(0)
 
     try:
         parsed = json.loads(cleaned)
     except Exception as e:
         logger.error("Groq OCR JSON parse failed: %s | raw=%s", e, raw_text[:200])
         return None
-
-    if not parsed.get("id_number"):
-        return None
+    # --- END REPLACEMENT ---
     return parsed
 
 
