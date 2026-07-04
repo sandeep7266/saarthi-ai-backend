@@ -15,6 +15,7 @@ from enum import Enum
 
 import razorpay
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from utils.rate_limiter import limiter, LIMIT_STRICT
 from pydantic import BaseModel, EmailStr, Field
 
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/api/v1/onboard", tags=["Onboarding"])
 RAZORPAY_KEY_ID     = os.getenv("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 APP_BASE_URL        = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
+COMPANY_WHATSAPP_NUMBER = os.getenv("COMPANY_WHATSAPP_NUMBER", "")  # dialable number, e.g. 919876543210 — used to auto-redirect back to WhatsApp after payment
 
 PLAN_PRICING = {
     "basic"   : {"monthly": 99900,  "yearly": 999900},   # paise
@@ -225,7 +227,7 @@ async def _create_pending_vendor_core(body: OnboardRequest) -> OnboardResponse:
             "plan"         : body.plan.value,
             "billing_cycle": body.billing_cycle.value,
         },
-        "callback_url"    : f"{APP_BASE_URL}/onboard/success",
+        "callback_url"    : f"{APP_BASE_URL}/api/v1/onboard/success",
         "callback_method" : "get",
     }
 
@@ -301,7 +303,7 @@ async def connect_whatsapp_number(client_id: str, body: ConnectWhatsAppRequest):
     })
 
     # ── Regenerate QR so it now points at the client's own number ──────────────
-    from utils.qr_generator import generate_client_qr # type: ignore
+    from utils.qr_generator import generate_client_qr
 
     qr_url = ""
     try:
@@ -321,3 +323,61 @@ async def connect_whatsapp_number(client_id: str, body: ConnectWhatsAppRequest):
         "qr_code_url": qr_url,
         "message": "WhatsApp number connected. QR code updated to point at your business number.",
     }
+
+
+# ── Payment Success Redirect Page ───────────────────────────────────────────────
+
+@router.get("/success", response_class=HTMLResponse)
+async def onboard_payment_success(request: Request):
+    """
+    Razorpay redirects the customer's browser here after they complete payment
+    on the hosted checkout page (see callback_url on the payment link). This is
+    purely a UX landing page — actual booking/client activation is handled
+    server-to-server by the /razorpay-webhook endpoint, which fires independently
+    and reliably regardless of whether the browser follows this redirect.
+    """
+    params = dict(request.query_params)
+    payment_status = params.get("razorpay_payment_link_status", "")
+    is_paid = payment_status == "paid"
+
+    wa_url = f"https://wa.me/{COMPANY_WHATSAPP_NUMBER}" if COMPANY_WHATSAPP_NUMBER else ""
+    auto_redirect_script = (
+        f'<script>setTimeout(function(){{ window.location.href = "{wa_url}"; }}, 2500);</script>'
+        if wa_url else ""
+    )
+
+    heading = "Payment Successful! 🎉" if is_paid else "Payment Received"
+    sub = (
+        "Aapka WhatsApp check karein — confirmation, QR code aur bill wahan bhej diye gaye hain."
+        if is_paid else
+        "Aapki payment process ho rahi hai. Confirmation WhatsApp par milega."
+    )
+
+    html = f"""<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Saarthi-AI — Payment Status</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#0b1f17; color:#fff;
+         display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:24px; }}
+  .card {{ max-width:420px; text-align:center; background:#122c20; border-radius:20px; padding:36px 28px; }}
+  .icon {{ font-size:56px; margin-bottom:12px; }}
+  h1 {{ font-size:22px; margin:0 0 10px; }}
+  p {{ color:#9fb8ac; font-size:15px; line-height:1.5; margin:0 0 24px; }}
+  a.btn {{ display:inline-block; background:#25D366; color:#fff; text-decoration:none; font-weight:600;
+           padding:13px 28px; border-radius:12px; font-size:15px; }}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">{'✅' if is_paid else '⏳'}</div>
+    <h1>{heading}</h1>
+    <p>{sub}</p>
+    {f'<a class="btn" href="{wa_url}">WhatsApp Kholein</a>' if wa_url else ''}
+  </div>
+  {auto_redirect_script}
+</body>
+</html>"""
+    return HTMLResponse(content=html)

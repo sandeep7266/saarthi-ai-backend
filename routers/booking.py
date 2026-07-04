@@ -19,6 +19,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 
 from database import get_db, Collections
 
@@ -535,7 +536,7 @@ async def _initiate_booking(
             "reminder_enable": False,
             "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
-            "callback_url"  : f"{APP_BASE_URL}/booking/success",
+            "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
         })
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
@@ -566,3 +567,46 @@ def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
             resp.raise_for_status()
     except Exception as e:
         logger.error("WhatsApp send failed → %s: %s", to, e)
+
+
+# ── Payment Success Redirect Page (customer booking deposit) ───────────────────
+
+@router.get("/booking-success", response_class=HTMLResponse)
+async def booking_payment_success(request: Request):
+    """
+    Razorpay redirects the customer's browser here after paying their booking
+    deposit. Purely a UX landing page — the actual booking confirmation is
+    handled server-to-server by /razorpay-webhook (payments.py), independent
+    of whether the browser follows this redirect.
+    """
+    params = dict(request.query_params)
+    is_paid = params.get("razorpay_payment_link_status", "") == "paid"
+
+    heading = "Booking Confirmed! 🎉" if is_paid else "Payment Received"
+    sub = "Confirmation aur booking details WhatsApp par bhej diye gaye hain." if is_paid \
+        else "Aapki payment process ho rahi hai. Confirmation WhatsApp par milega."
+
+    html = f"""<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Saarthi-AI — Booking Status</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#0b1f17; color:#fff;
+         display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:24px; }}
+  .card {{ max-width:420px; text-align:center; background:#122c20; border-radius:20px; padding:36px 28px; }}
+  .icon {{ font-size:56px; margin-bottom:12px; }}
+  h1 {{ font-size:22px; margin:0 0 10px; }}
+  p {{ color:#9fb8ac; font-size:15px; line-height:1.5; margin:0; }}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">{'✅' if is_paid else '⏳'}</div>
+    <h1>{heading}</h1>
+    <p>{sub}</p>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
