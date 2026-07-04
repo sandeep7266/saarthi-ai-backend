@@ -234,6 +234,12 @@
     sidebarOpen: false,
     loginError: '',
     loginLoading: false,
+    loginInfo: '',
+
+    forgotStep: 'request',   // 'request' | 'reset'
+    forgotError: '',
+    forgotLoading: false,
+    forgotInfo: '',
 
     analytics: null,
     analyticsPeriod: 'week',
@@ -347,7 +353,7 @@
     }
 
     state.loginLoading = true;
-    state.loginError = '';
+    state.loginError = ''; state.loginInfo = '';
     render();
 
     fetch(API_BASE + '/api/v1/auth/login', {
@@ -390,6 +396,7 @@
           '<div class="login-sub">Vendor Dashboard</div>' +
         '</div>' +
         (state.loginError ? '<div class="error-banner">' + escapeHtml(state.loginError) + '</div>' : '') +
+        (state.loginInfo ? '<div class="section-sub" style="margin-bottom:14px;text-align:center;color:#25D366">' + escapeHtml(state.loginInfo) + '</div>' : '') +
         '<form id="login-form">' +
           '<label class="field-label">Business ID</label>' +
           '<input id="login-client-id" class="field-input" type="text" placeholder="Your Saarthi Client ID" autocomplete="off" />' +
@@ -401,8 +408,153 @@
             (state.loginLoading ? '<span class="spinner-sm"></span>' : 'Log In') +
           '</button>' +
         '</form>' +
+        '<div style="text-align:center;margin-top:16px">' +
+          '<a href="#" id="forgot-password-link" style="color:var(--text-mute);font-size:13.5px;text-decoration:underline">Forgot Password?</a>' +
+        '</div>' +
       '</div></div>'
     );
+  }
+
+  function renderForgotPassword() {
+    var isReset = state.forgotStep === 'reset';
+    return (
+      '<div class="screen-center"><div class="login-wrap">' +
+        '<div class="login-logo">' +
+          '<div class="logo-badge display">S</div>' +
+          '<div class="display login-title">Saarthi-AI</div>' +
+          '<div class="login-sub">' + (isReset ? 'Enter OTP & New Password' : 'Reset Password') + '</div>' +
+        '</div>' +
+        (state.forgotError ? '<div class="error-banner">' + escapeHtml(state.forgotError) + '</div>' : '') +
+        (state.forgotInfo ? '<div class="section-sub" style="margin-bottom:14px;text-align:center">' + escapeHtml(state.forgotInfo) + '</div>' : '') +
+        (isReset ? (
+          '<form id="reset-password-form">' +
+            '<label class="field-label">OTP (WhatsApp par bheja gaya)</label>' +
+            '<input id="reset-otp" class="field-input" type="text" placeholder="6-digit OTP" autocomplete="off" />' +
+            '<label class="field-label">New Password</label>' +
+            '<input id="reset-new-password" class="field-input" type="password" placeholder="At least 8 characters" autocomplete="new-password" />' +
+            '<button type="submit" class="btn-primary" ' + (state.forgotLoading ? 'disabled' : '') + '>' +
+              (state.forgotLoading ? '<span class="spinner-sm"></span>' : 'Reset Password') +
+            '</button>' +
+          '</form>'
+        ) : (
+          '<form id="forgot-password-form">' +
+            '<label class="field-label">Business ID</label>' +
+            '<input id="forgot-client-id" class="field-input" type="text" placeholder="Your Saarthi Client ID" autocomplete="off" />' +
+            '<label class="field-label">Email</label>' +
+            '<input id="forgot-email" class="field-input" type="email" placeholder="you@example.com" autocomplete="username" />' +
+            '<button type="submit" class="btn-primary" ' + (state.forgotLoading ? 'disabled' : '') + '>' +
+              (state.forgotLoading ? '<span class="spinner-sm"></span>' : 'Send OTP via WhatsApp') +
+            '</button>' +
+          '</form>'
+        )) +
+        '<div style="text-align:center;margin-top:16px">' +
+          '<a href="#" id="back-to-login-link" style="color:var(--text-mute);font-size:13.5px;text-decoration:underline">Back to Login</a>' +
+        '</div>' +
+      '</div></div>'
+    );
+  }
+
+  function attachForgotPasswordHandlers() {
+    var backLink = document.getElementById('back-to-login-link');
+    if (backLink) backLink.addEventListener('click', function (e) {
+      e.preventDefault();
+      state.screen = 'login';
+      state.loginError = ''; state.loginInfo = '';
+      render();
+    });
+
+    var forgotForm = document.getElementById('forgot-password-form');
+    if (forgotForm) forgotForm.addEventListener('submit', handleForgotPasswordRequest);
+
+    var resetForm = document.getElementById('reset-password-form');
+    if (resetForm) resetForm.addEventListener('submit', handleResetPassword);
+  }
+
+  function handleForgotPasswordRequest(e) {
+    e.preventDefault();
+    var clientId = document.getElementById('forgot-client-id').value.trim();
+    var email    = document.getElementById('forgot-email').value.trim();
+
+    if (!clientId || !email) {
+      state.forgotError = 'Please fill in both fields.';
+      render();
+      return;
+    }
+
+    state.forgotLoading = true;
+    state.forgotError = '';
+    render();
+
+    fetch(API_BASE + '/api/v1/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, email: email }),
+    })
+      .then(function (resp) { return resp.json().then(function (data) {
+        if (!resp.ok) throw new Error(data.detail || 'Request failed.');
+        return data;
+      }); })
+      .then(function (data) {
+        state.forgotLoading = false;
+        state.forgotStep = 'reset';
+        state.forgotInfo = data.message || 'OTP WhatsApp par bhej diya gaya hai.';
+        state._resetClientId = clientId;
+        state._resetEmail = email;
+        render();
+      })
+      .catch(function (err) {
+        state.forgotLoading = false;
+        state.forgotError = err.message;
+        render();
+      });
+  }
+
+  function handleResetPassword(e) {
+    e.preventDefault();
+    var otp = document.getElementById('reset-otp').value.trim();
+    var newPassword = document.getElementById('reset-new-password').value;
+
+    if (!otp || !newPassword) {
+      state.forgotError = 'Please fill in both fields.';
+      render();
+      return;
+    }
+    if (newPassword.length < 8) {
+      state.forgotError = 'Password must be at least 8 characters.';
+      render();
+      return;
+    }
+
+    state.forgotLoading = true;
+    state.forgotError = '';
+    render();
+
+    fetch(API_BASE + '/api/v1/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: state._resetClientId,
+        email: state._resetEmail,
+        otp: otp,
+        new_password: newPassword,
+      }),
+    })
+      .then(function (resp) { return resp.json().then(function (data) {
+        if (!resp.ok) throw new Error(data.detail || 'Reset failed.');
+        return data;
+      }); })
+      .then(function () {
+        state.forgotLoading = false;
+        state.screen = 'login';
+        state.loginError = ''; state.loginInfo = '';
+        state.loginInfo = 'Password reset ho gaya! Naye password se login karein.';
+        render();
+      })
+      .catch(function (err) {
+        state.forgotLoading = false;
+        state.forgotError = err.message;
+        render();
+      });
   }
 
   function getNavItems() {
@@ -1257,6 +1409,19 @@
       appEl.innerHTML = renderLogin();
       var form = document.getElementById('login-form');
       if (form) form.addEventListener('submit', handleLogin);
+      var forgotLink = document.getElementById('forgot-password-link');
+      if (forgotLink) forgotLink.addEventListener('click', function (e) {
+        e.preventDefault();
+        state.screen = 'forgot-password';
+        state.forgotStep = 'request';
+        state.forgotError = '';
+        render();
+      });
+      return;
+    }
+    if (state.screen === 'forgot-password') {
+      appEl.innerHTML = renderForgotPassword();
+      attachForgotPasswordHandlers();
       return;
     }
     if (state.screen === 'dashboard') {
