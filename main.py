@@ -200,6 +200,27 @@ async def serve_booking_app():
     https://YOUR_DOMAIN/book?session=xxxxx
     """
     return FileResponse("static/book.html", media_type="text/html")
+
+
+# ── Client Vendor Dashboard (serves static HTML) ────────────────────────────────
+@app.get("/dashboard", tags=["Vendor Dashboard"])
+async def serve_vendor_dashboard():
+    """Client-facing dashboard — login + bookings/services/settings management."""
+    return FileResponse("static/dashboard.html", media_type="text/html")
+
+
+# ── Internal Ops Console (serves static HTML, platform_admin only) ─────────────
+@app.get("/admin", tags=["Ops Console"])
+async def serve_ops_console():
+    """
+    Saarthi-AI's own internal team console (not client-facing). The page itself
+    calls /api/v1/auth/platform-login and require_platform_admin-gated endpoints,
+    so serving the HTML here is not a security boundary by itself — access
+    control happens at the API layer, same as the vendor dashboard.
+    """
+    return FileResponse("static/platform_admin.html", media_type="text/html")
+
+
 app.include_router(notifications_router)
 app.include_router(booking_session_router)
 app.include_router(dashboard_config_router)

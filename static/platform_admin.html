@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Saarthi Ops Console</title>
+<style>
+  :root {
+    --bg:         #0F1114;
+    --surface:    #171A1F;
+    --surface-hi: #1D2127;
+    --border:     #282D35;
+    --amber:      #F5A623;
+    --amber-dim:  #7A5518;
+    --green:      #34D399;
+    --red:        #F0555A;
+    --text:       #E8EAED;
+    --text-soft:  #A7ADB6;
+    --text-mute:  #6E7480;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mute); }
+  .mono { font-family: var(--mono); font-size: 13px; }
+
+  .screen-center { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .login-wrap { width: 100%; max-width: 380px; }
+  .login-logo { text-align: center; margin-bottom: 28px; }
+  .logo-mark {
+    width: 40px; height: 40px; border-radius: 8px; background: var(--amber); color: #1a1200;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px;
+    margin-bottom: 14px;
+  }
+  .login-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .login-sub { font-size: 13px; color: var(--text-mute); margin-top: 4px; }
+
+  .field-label { font-size: 12px; font-weight: 600; color: var(--text-soft); margin-bottom: 6px; display: block; }
+  .field-input {
+    width: 100%; padding: 11px 13px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-hi); color: var(--text); font-size: 14px; margin-bottom: 14px;
+  }
+  .field-input:focus { outline: none; border-color: var(--amber); }
+  .field-input::placeholder { color: var(--text-mute); }
+  .field-input.mono { font-family: var(--mono); }
+
+  .btn-primary {
+    width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--amber);
+    color: #1a1200; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .btn-primary:disabled { background: var(--border); color: var(--text-mute); cursor: default; }
+  .btn-ghost {
+    padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: transparent;
+    color: var(--text-soft); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text-mute); }
+  .btn-danger { border-color: var(--red); color: var(--red); }
+
+  .error-banner { background: rgba(240,85,90,0.1); border: 1px solid var(--red); color: var(--red);
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+  .info-banner { background: rgba(52,211,153,0.08); border: 1px solid var(--green); color: var(--green);
+    padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+
+  .app-shell { display: flex; min-height: 100vh; }
+  .rail { width: 220px; background: var(--surface); border-right: 1px solid var(--border); flex-shrink: 0;
+    display: flex; flex-direction: column; }
+  .rail-brand { padding: 20px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .rail-brand-text { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; }
+  .rail-nav { padding: 14px 10px; flex: 1; }
+  .rail-item {
+    width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; border: none; background: none;
+    color: var(--text-soft); font-size: 13.5px; font-weight: 500; cursor: pointer; display: flex;
+    align-items: center; justify-content: space-between; margin-bottom: 2px;
+  }
+  .rail-item:hover { background: var(--surface-hi); color: var(--text); }
+  .rail-item.active { background: var(--surface-hi); color: var(--text); box-shadow: inset 2px 0 0 var(--amber); }
+  .rail-count { font-family: var(--mono); font-size: 11px; background: var(--border); color: var(--text-soft);
+    padding: 2px 7px; border-radius: 10px; }
+  .rail-count.hot { background: var(--amber-dim); color: var(--amber); }
+  .rail-footer { padding: 14px 18px 18px; border-top: 1px solid var(--border); }
+
+  .main { flex: 1; padding: 28px 32px; max-width: 980px; }
+  .page-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 4px; }
+  .page-sub { font-size: 13.5px; color: var(--text-mute); margin-bottom: 24px; }
+
+  .ticket {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--amber);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 12px;
+  }
+  .ticket.resolved { border-left-color: var(--border); opacity: 0.7; }
+  .ticket-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .ticket-name { font-size: 14.5px; font-weight: 700; }
+  .ticket-meta { font-size: 12.5px; color: var(--text-mute); margin-top: 3px; }
+  .ticket-meta .mono { color: var(--text-soft); }
+  .pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--amber); display: inline-block;
+    margin-right: 6px; animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .ticket-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: none; }
+  .ticket-form.open { display: block; }
+  .ticket-row { display: flex; gap: 10px; }
+  .ticket-row .field-input { margin-bottom: 10px; }
+  .ticket-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-mute); }
+  .empty-state .big { font-size: 28px; margin-bottom: 8px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; color: var(--text-mute); font-weight: 600; font-size: 11.5px;
+    letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .status-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase;
+    letter-spacing: 0.03em; }
+  .status-active { background: rgba(52,211,153,0.12); color: var(--green); }
+  .status-inactive { background: var(--border); color: var(--text-mute); }
+  .status-suspended, .status-expired { background: rgba(240,85,90,0.12); color: var(--red); }
+  .kyc-flag { color: var(--amber); font-size: 12px; font-weight: 700; }
+
+  select.field-input { appearance: none; cursor: pointer; }
+
+  .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--amber);
+    border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .spinner-sm { width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.25); border-top-color: #1a1200;
+    border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 9px; font-size: 13.5px;
+    font-weight: 600; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .toast.success { background: var(--green); color: #06251b; }
+  .toast.error { background: var(--red); color: #2a0808; }
+
+  .mobile-menu-btn { display: none; }
+  @media (max-width: 720px) {
+    .rail { position: fixed; left: -220px; top: 0; height: 100%; z-index: 50; transition: left 0.2s; }
+    .rail.open { left: 0; }
+    .main { padding: 20px 16px; }
+    .mobile-menu-btn {
+      display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+      border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      margin-bottom: 16px; cursor: pointer; font-size: 16px;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : 'https://saarthi-ai-backend-production-9063.up.railway.app';
+
+  var TOKEN_KEY = 'saarthi_platform_token';
+
+  var state = {
+    screen: 'loading',
+    page: 'pending-wa',
+    token: null,
+    claims: null,
+    railOpen: false,
+
+    loginError: '', loginLoading: false,
+
+    pendingWa: null, pendingWaLoading: false,
+    openTicket: null, ticketSaving: false, ticketError: '',
+
+    clients: null, clientsLoading: false,
+    statusSaving: {},
+
+    toast: null,
+  };
+
+  var appEl = document.getElementById('app');
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function showToast(message, type) {
+    state.toast = { message: message, type: type || 'success' };
+    render();
+    setTimeout(function () { state.toast = null; render(); }, 3000);
+  }
+
+  function decodeJwt(token) {
+    try {
+      var payload = token.split('.')[1];
+      var json = decodeURIComponent(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+        .split('').map(function (c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join(''));
+      return JSON.parse(json);
+    } catch (e) { return null; }
+  }
+
+  function apiFetch(path, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+    return fetch(API_BASE + path, Object.assign({}, options, { headers: headers }))
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; }).then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Request failed (' + resp.status + ')');
+          return data;
+        });
+      });
+  }
+
+  function logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    state.token = null; state.claims = null; state.screen = 'login';
+    render();
+  }
+
+  function boot() {
+    var saved = localStorage.getItem(TOKEN_KEY);
+    if (!saved) { state.screen = 'login'; render(); return; }
+    state.token = saved;
+    state.claims = decodeJwt(saved);
+    if (!state.claims || state.claims.role !== 'platform_admin') { logout(); return; }
+    state.screen = 'console';
+    render();
+    loadPendingWa();
+  }
+
+  // ── Login ────────────────────────────────────────────────────────────────────
+
+  function renderLogin() {
+    return (
+      '<div class="screen-center"><div class="login-wrap">' +
+        '<div class="login-logo">' +
+          '<div class="logo-mark">S</div>' +
+          '<div class="login-title">Saarthi Ops Console</div>' +
+          '<div class="login-sub">Internal team access only</div>' +
+        '</div>' +
+        (state.loginError ? '<div class="error-banner">' + escapeHtml(state.loginError) + '</div>' : '') +
+        '<form id="login-form">' +
+          '<label class="field-label">Email</label>' +
+          '<input id="login-email" class="field-input" type="email" placeholder="you@saarthi-ai.in" autocomplete="username" />' +
+          '<label class="field-label">Password</label>' +
+          '<input id="login-password" class="field-input" type="password" placeholder="••••••••" autocomplete="current-password" />' +
+          '<button type="submit" class="btn-primary" ' + (state.loginLoading ? 'disabled' : '') + '>' +
+            (state.loginLoading ? '<span class="spinner-sm"></span>' : 'Log In') +
+          '</button>' +
+        '</form>' +
+      '</div></div>'
+    );
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    var email = document.getElementById('login-email').value.trim();
+    var password = document.getElementById('login-password').value;
+    if (!email || !password) { state.loginError = 'Enter email and password.'; render(); return; }
+
+    state.loginLoading = true; state.loginError = '';
+    render();
+
+    fetch(API_BASE + '/api/v1/auth/platform-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: password }),
+    })
+      .then(function (resp) { return resp.json().then(function (data) {
+        if (!resp.ok) throw new Error(data.detail || 'Login failed.');
+        return data;
+      }); })
+      .then(function (data) {
+        state.loginLoading = false;
+        state.token = data.access_token;
+        state.claims = decodeJwt(data.access_token);
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+        state.screen = 'console';
+        render();
+        loadPendingWa();
+      })
+      .catch(function (err) {
+        state.loginLoading = false; state.loginError = err.message; render();
+      });
+  }
+
+  // ── Data loading ─────────────────────────────────────────────────────────────
+
+  function loadPendingWa() {
+    state.pendingWaLoading = true; render();
+    apiFetch('/api/v1/platform/clients/pending-whatsapp-connect')
+      .then(function (data) { state.pendingWa = data.clients || []; state.pendingWaLoading = false; render(); })
+      .catch(function (err) { state.pendingWaLoading = false; showToast(err.message, 'error'); render(); });
+  }
+
+  function loadClients() {
+    state.clientsLoading = true; render();
+    apiFetch('/api/v1/platform/clients')
+      .then(function (data) { state.clients = data.clients || []; state.clientsLoading = false; render(); })
+      .catch(function (err) { state.clientsLoading = false; showToast(err.message, 'error'); render(); });
+  }
+
+  // ── Shell / nav ──────────────────────────────────────────────────────────────
+
+  function renderShell() {
+    var pendingCount = state.pendingWa ? state.pendingWa.length : 0;
+
+    var html = '<div class="app-shell">' +
+      '<div class="rail' + (state.railOpen ? ' open' : '') + '">' +
+        '<div class="rail-brand"><div class="logo-mark" style="width:28px;height:28px;font-size:13px">S</div>' +
+          '<div class="rail-brand-text">Ops Console</div></div>' +
+        '<div class="rail-nav">' +
+          '<button class="rail-item' + (state.page === 'pending-wa' ? ' active' : '') + '" data-page="pending-wa">' +
+            '<span>WhatsApp Connect</span>' +
+            (pendingCount > 0 ? '<span class="rail-count hot">' + pendingCount + '</span>' : '') +
+          '</button>' +
+          '<button class="rail-item' + (state.page === 'clients' ? ' active' : '') + '" data-page="clients">' +
+            '<span>All Clients</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="rail-footer"><button class="btn-ghost btn-danger" id="logout-btn" style="width:100%">Log Out</button></div>' +
+      '</div>' +
+      '<div class="main">' +
+        '<button class="mobile-menu-btn" id="menu-btn">☰</button>' +
+        (state.page === 'pending-wa' ? renderPendingWaPage() : renderClientsPage()) +
+      '</div>' +
+    '</div>' +
+    (state.toast ? '<div class="toast ' + state.toast.type + '">' + escapeHtml(state.toast.message) + '</div>' : '');
+
+    appEl.innerHTML = html;
+    attachShellHandlers();
+  }
+
+  function attachShellHandlers() {
+    var logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+    var menuBtn = document.getElementById('menu-btn');
+    if (menuBtn) menuBtn.addEventListener('click', function () { state.railOpen = !state.railOpen; render(); });
+
+    document.querySelectorAll('.rail-item').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.page = btn.getAttribute('data-page');
+        state.railOpen = false;
+        render();
+        if (state.page === 'clients' && !state.clients) loadClients();
+      });
+    });
+
+    if (state.page === 'pending-wa') attachPendingWaHandlers();
+    if (state.page === 'clients') attachClientsHandlers();
+  }
+
+  // ── Pending WhatsApp Connect page ───────────────────────────────────────────
+
+  function renderPendingWaPage() {
+    var html = '<div class="page-title">WhatsApp Connect Queue</div>' +
+      '<div class="page-sub">Active clients still on the fallback number. Call the owner, complete Meta setup on their behalf, then record it here.</div>';
+
+    if (state.pendingWaLoading) {
+      html += '<div class="screen-center" style="min-height:200px"><div class="spinner"></div></div>';
+      return html;
+    }
+
+    if (!state.pendingWa || state.pendingWa.length === 0) {
+      html += '<div class="empty-state"><div class="big">✓</div>All caught up — no pending connections.</div>';
+      return html;
+    }
+
+    state.pendingWa.forEach(function (c) {
+      var isOpen = state.openTicket === c.client_id;
+      html += '<div class="ticket" data-client-id="' + escapeHtml(c.client_id) + '">' +
+        '<div class="ticket-top">' +
+          '<div>' +
+            '<div class="ticket-name"><span class="pulse-dot"></span>' + escapeHtml(c.business_name || 'Unnamed business') + '</div>' +
+            '<div class="ticket-meta">' + escapeHtml(c.owner_name || '') + ' · <span class="mono">' + escapeHtml(c.owner_phone || '') + '</span></div>' +
+          '</div>' +
+          '<button class="btn-ghost toggle-ticket-btn" data-client-id="' + escapeHtml(c.client_id) + '">' +
+            (isOpen ? 'Cancel' : 'Connect') +
+          '</button>' +
+        '</div>' +
+        '<div class="ticket-form' + (isOpen ? ' open' : '') + '">' +
+          (state.ticketError && isOpen ? '<div class="error-banner">' + escapeHtml(state.ticketError) + '</div>' : '') +
+          '<label class="field-label">Meta Phone Number ID</label>' +
+          '<input class="field-input mono ticket-phone-id" placeholder="e.g. 123456789012345" />' +
+          '<label class="field-label">Business WhatsApp Number</label>' +
+          '<input class="field-input mono ticket-business-number" placeholder="e.g. +919876543210" />' +
+          '<div class="ticket-actions">' +
+            '<button class="btn-primary submit-ticket-btn" style="width:auto;padding:10px 18px" ' +
+              'data-client-id="' + escapeHtml(c.client_id) + '" ' + (state.ticketSaving ? 'disabled' : '') + '>' +
+              (state.ticketSaving ? '<span class="spinner-sm"></span>' : 'Save & Connect') +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    });
+
+    return html;
+  }
+
+  function attachPendingWaHandlers() {
+    document.querySelectorAll('.toggle-ticket-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-client-id');
+        state.openTicket = (state.openTicket === id) ? null : id;
+        state.ticketError = '';
+        render();
+      });
+    });
+
+    document.querySelectorAll('.submit-ticket-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var clientId = btn.getAttribute('data-client-id');
+        var ticket = document.querySelector('.ticket[data-client-id="' + clientId + '"]');
+        var phoneId = ticket.querySelector('.ticket-phone-id').value.trim();
+        var businessNumber = ticket.querySelector('.ticket-business-number').value.trim();
+
+        if (!phoneId || !businessNumber) {
+          state.ticketError = 'Both fields are required.'; render(); return;
+        }
+
+        state.ticketSaving = true; state.ticketError = '';
+        render();
+
+        apiFetch('/api/v1/onboard/' + encodeURIComponent(clientId) + '/connect-whatsapp', {
+          method: 'PATCH',
+          body: JSON.stringify({ whatsapp_phone_id: phoneId, whatsapp_business_number: businessNumber }),
+        })
+          .then(function () {
+            state.ticketSaving = false; state.openTicket = null;
+            showToast('Connected — QR regenerated for the client.', 'success');
+            loadPendingWa();
+          })
+          .catch(function (err) {
+            state.ticketSaving = false; state.ticketError = err.message; render();
+          });
+      });
+    });
+  }
+
+  // ── All Clients page ─────────────────────────────────────────────────────────
+
+  function renderClientsPage() {
+    var html = '<div class="page-title">All Clients</div>' +
+      '<div class="page-sub">Every tenant on the platform — status, plan, and KYC review flags.</div>';
+
+    if (state.clientsLoading || !state.clients) {
+      html += '<div class="screen-center" style="min-height:200px"><div class="spinner"></div></div>';
+      return html;
+    }
+
+    if (state.clients.length === 0) {
+      html += '<div class="empty-state"><div class="big">—</div>No clients yet.</div>';
+      return html;
+    }
+
+    html += '<div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
+      '<table><thead><tr><th>Business</th><th>Status</th><th>Plan</th><th>KYC</th><th></th></tr></thead><tbody>';
+
+    state.clients.forEach(function (c) {
+      html += '<tr data-client-id="' + escapeHtml(c.client_id) + '">' +
+        '<td><div style="font-weight:600">' + escapeHtml(c.business_name || '—') + '</div>' +
+          '<div class="mono" style="color:var(--text-mute);font-size:11.5px">' + escapeHtml(c.client_id) + '</div></td>' +
+        '<td><span class="status-chip status-' + escapeHtml(c.status || 'inactive') + '">' + escapeHtml(c.status || 'inactive') + '</span></td>' +
+        '<td>' + escapeHtml(c.plan || '—') + '</td>' +
+        '<td>' + (c.kyc_review_needed ? '<span class="kyc-flag">⚠ Review needed</span>' : '<span style="color:var(--text-mute)">OK</span>') + '</td>' +
+        '<td>' +
+          '<select class="field-input status-select" style="margin:0;padding:6px 8px;font-size:12.5px;width:auto">' +
+            ['active', 'inactive', 'suspended', 'expired'].map(function (s) {
+              return '<option value="' + s + '"' + (c.status === s ? ' selected' : '') + '>' + s + '</option>';
+            }).join('') +
+          '</select>' +
+        '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function attachClientsHandlers() {
+    document.querySelectorAll('.status-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var row = sel.closest('tr');
+        var clientId = row.getAttribute('data-client-id');
+        apiFetch('/api/v1/platform/clients/' + encodeURIComponent(clientId) + '/status', {
+          method: 'PATCH',
+          body: JSON.stringify({ status: sel.value, reason: 'Changed via Ops Console' }),
+        })
+          .then(function () { showToast('Status updated.', 'success'); loadClients(); })
+          .catch(function (err) { showToast(err.message, 'error'); });
+      });
+    });
+  }
+
+  // ── Render dispatcher ────────────────────────────────────────────────────────
+
+  function render() {
+    if (state.screen === 'loading') {
+      appEl.innerHTML = '<div class="screen-center"><div class="spinner"></div></div>';
+      return;
+    }
+    if (state.screen === 'login') {
+      appEl.innerHTML = renderLogin();
+      var form = document.getElementById('login-form');
+      if (form) form.addEventListener('submit', handleLogin);
+      return;
+    }
+    if (state.screen === 'console') {
+      renderShell();
+      return;
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
