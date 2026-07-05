@@ -50,16 +50,8 @@ async def list_all_clients(admin: dict = Depends(require_platform_admin)):
     return {"count": len(clients), "clients": clients}
 
 
-# ── Single client detail ────────────────────────────────────────────────────────
-
-@router.get("/clients/{client_id}")
-async def get_client_detail(client_id: str, admin: dict = Depends(require_platform_admin)):
-    db = get_db()
-    doc = db.collection(Collections.CLIENTS).document(client_id).get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail="Client not found.")
-    return {"client_id": client_id, **doc.to_dict()}
-
+# ── Pending WhatsApp connect queue (must be registered BEFORE /clients/{client_id} — ──
+# ── otherwise FastAPI matches "pending-whatsapp-connect" as a client_id value) ────────
 
 @router.get("/clients/pending-whatsapp-connect")
 async def list_pending_whatsapp_connect(admin: dict = Depends(require_platform_admin)):
@@ -84,6 +76,17 @@ async def list_pending_whatsapp_connect(admin: dict = Depends(require_platform_a
             })
 
     return {"count": len(pending), "clients": pending}
+
+
+# ── Single client detail ────────────────────────────────────────────────────────
+
+@router.get("/clients/{client_id}")
+async def get_client_detail(client_id: str, admin: dict = Depends(require_platform_admin)):
+    db = get_db()
+    doc = db.collection(Collections.CLIENTS).document(client_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Client not found.")
+    return {"client_id": client_id, **doc.to_dict()}
 
 
 # ── Manually set a client's status (e.g. resolve a KYC mismatch review) ────────
