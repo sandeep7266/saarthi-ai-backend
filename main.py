@@ -15,7 +15,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-
+from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
@@ -184,6 +184,7 @@ async def tenant_status_middleware(request: Request, call_next) -> Response:
 
 
 # ── Routers ────────────────────────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(auth.router)
 app.include_router(onboard.router)
 app.include_router(booking.router)
