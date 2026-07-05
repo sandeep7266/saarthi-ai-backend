@@ -564,6 +564,9 @@ async def _call_groq_onboarding(collected: dict, history: list[dict]) -> dict:
         }
 
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(collected_json=json.dumps(collected, ensure_ascii=False))
+    system_prompt += (
+        "\n\nIMPORTANT: Reply with ONLY a raw JSON object, no markdown, no code fences, no preamble."
+    )
     messages = [{"role": "system", "content": system_prompt}] + history
 
     try:
@@ -575,24 +578,39 @@ async def _call_groq_onboarding(collected: dict, history: list[dict]) -> dict:
                     "Content-Type" : "application/json",
                 },
                 json={
-                    "model"          : GROQ_MODEL,
-                    "messages"       : messages,
-                    "temperature"    : 0.4,
-                    "max_tokens"     : 400,
-                    "response_format": {"type": "json_object"},
+                    "model"       : GROQ_MODEL,
+                    "messages"    : messages,
+                    "temperature" : 0.4,
+                    "max_tokens"  : 400,
+                    # NOTE: response_format=json_object deliberately omitted — this
+                    # model has returned 400 with JSON mode enabled. Relying on the
+                    # prompt instruction + fence-stripping below instead.
                 },
             )
             resp.raise_for_status()
             raw_text = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        logger.error("Groq API error (onboarding): %s", e)
+        error_detail = ""
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                error_detail = e.response.text[:500]
+            except Exception:
+                pass
+        logger.error("Groq API error (onboarding): %s | response=%s", e, error_detail)
         return {
             "reply": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
             "collected": collected,
         }
 
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(cleaned)
     except Exception as e:
         logger.error("Groq onboarding JSON parse failed: %s | raw=%s", e, raw_text[:300])
         return {
