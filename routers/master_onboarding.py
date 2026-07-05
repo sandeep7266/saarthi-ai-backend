@@ -252,27 +252,17 @@ async def _handle_kyc_upload(
         collected["pan_number"] = pan_number
 
     # ── Name matching against owner_name (fuzzy, case-insensitive) ─────────────
-    e   = (extracted.get("name") or "").strip().lower()
-    owner_name = str(collected.get("owner_name", "")).strip().lower()
-    # ── Name matching against owner_name (STRICT BLOCK) ─────────────
     doc_name   = (extracted.get("name") or "").strip().lower()
     owner_name = str(collected.get("owner_name", "")).strip().lower()
     if doc_name and owner_name:
         similarity = difflib.SequenceMatcher(None, doc_name, owner_name).ratio()
         name_matches = similarity >= 0.6
-        
-        # Agar naam 60% se kam match hota hai, toh process yahin rok do
-        if not name_matches:
-            await _send_text(
-                phone_number_id, to, 
-                f"⚠️ Error: Document par naam '{doc_name.title()}' aapke diye gaye business owner naam '{owner_name.title()}' se match nahi kar raha. Kripya apna hi {doc_label} bhejein 🙏"
-            )
-            return # Function yahin return ho jayega, agla document nahi mangega
-            
+        # Only downgrade the flag, never upgrade — one mismatched doc should
+        # still show the warning even if the other doc matched fine.
         collected["kyc_name_match"] = collected.get("kyc_name_match", True) and name_matches
 
     session_ref.update({"collected": collected, "pending_choice": ""})
-    await _send_text(phone_number_id, to, f"{doc_label} scan ho gaya (Name Verified ✅), dhanyavaad!")
+    await _send_text(phone_number_id, to, f"{doc_label} mil gaya, dhanyavaad! ✅")
     await _advance(phone_number_id, to, session_ref, collected)
 
 
@@ -284,7 +274,7 @@ async def _download_whatsapp_media(media_id: str) -> bytes:
             meta_resp = await client.get(
                 f"https://graph.facebook.com/{META_API_VERSION}/{media_id}", headers=headers
             )
-            meta_resp.rdoc_namaise_for_status()
+            meta_resp.raise_for_status()
             media_url = meta_resp.json().get("url", "")
             if not media_url:
                 return b""
@@ -358,31 +348,16 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:]
-       # --- START REPLACEMENT ---
-    cleaned = raw_text.strip()
-    
-    # 1. Strip the <think>...</think> blocks added by reasoning models
-    if "<think>" in cleaned:
-        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
-
-    # 2. Strip markdown fences if the model wrapped the JSON
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:]
         cleaned = cleaned.strip()
-        
-    # 3. Robust fallback to extract exactly the JSON dictionary
-    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
-    if match:
-        cleaned = match.group(0)
 
     try:
         parsed = json.loads(cleaned)
     except Exception as e:
         logger.error("Groq OCR JSON parse failed: %s | raw=%s", e, raw_text[:200])
         return None
-    # --- END REPLACEMENT ---
+
+    if not parsed.get("id_number"):
+        return None
     return parsed
 
 
