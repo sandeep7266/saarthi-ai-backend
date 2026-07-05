@@ -150,6 +150,15 @@ async def handle_onboarding_message(
 
     # ── Path 1a: We're waiting on a KYC document upload ─────────────────────────
     if pending_choice in ("upload_aadhaar", "upload_pan"):
+        # WhatsApp can deliver "front" and "back" (or any two quick uploads) as
+        # near-simultaneous, separate webhook calls. Without a lock, both could
+        # read the same pending_choice and both process as the same document,
+        # duplicating messages and skipping straight past PAN. Claim the slot
+        # atomically first — only the request that wins the transaction proceeds;
+        # the other is a no-op (its image is simply not needed).
+        claimed = _claim_kyc_slot(db, session_ref, pending_choice)
+        if not claimed:
+            return  # a concurrent request already claimed this step — ignore silently
         await _handle_kyc_upload(
             phone_number_id, from_number, session_ref, collected, pending_choice, media_id
         )
@@ -206,48 +215,67 @@ def _create_session(session_ref) -> dict:
 
 # ── KYC document upload handling ────────────────────────────────────────────────
 
+def _claim_kyc_slot(db, session_ref, expected_pending_choice: str) -> bool:
+    """
+    Atomically claims the current KYC upload step so that two near-simultaneous
+    webhook calls (e.g. WhatsApp delivering front+back of Aadhaar as separate
+    messages within milliseconds of each other) can't both process as the same
+    document. Only the request that wins the transaction gets True; the other
+    gets False and should silently no-op.
+    """
+    @db.transactional
+    def _txn(transaction):
+        snapshot = session_ref.get(transaction=transaction)
+        current = (snapshot.to_dict() or {}).get("pending_choice", "")
+        if current != expected_pending_choice:
+            return False
+        transaction.update(session_ref, {"pending_choice": f"{expected_pending_choice}:claimed"})
+        return True
+
+    try:
+        return _txn(db.transaction())
+    except Exception as e:
+        logger.error("KYC slot claim transaction failed: %s", e)
+        return False
+
+
 async def _handle_kyc_upload(
     phone_number_id, to, session_ref, collected, pending_choice, media_id
 ) -> None:
     doc_label = "Aadhaar card" if pending_choice == "upload_aadhaar" else "PAN card"
 
+    def _retry(msg: str):
+        # Restore pending_choice (the claim lock moved it to a temp value) so
+        # the user's next upload attempt is still routed here correctly.
+        session_ref.update({"pending_choice": pending_choice})
+        return _send_text(phone_number_id, to, msg)
+
     if not media_id:
-        await _send_text(
-            phone_number_id, to,
-            f"Kripya {doc_label} ki ek photo bhejein (image ya PDF ke roop mein) 📄"
-        )
+        await _retry(f"Kripya {doc_label} ki ek photo bhejein (image ya PDF ke roop mein) 📄")
         return
 
     image_bytes = await _download_whatsapp_media(media_id)
     if not image_bytes:
-        await _send_text(
-            phone_number_id, to,
-            f"{doc_label} download nahi ho payi. Ek baar phir bhejne ki koshish karein 🙏"
-        )
+        await _retry(f"{doc_label} download nahi ho payi. Ek baar phir bhejne ki koshish karein 🙏")
         return
 
     doc_type = "aadhaar" if pending_choice == "upload_aadhaar" else "pan"
     extracted = await _extract_id_document(image_bytes, doc_type)
 
     if extracted is None:
-        await _send_text(
-            phone_number_id, to,
-            f"{doc_label} clearly padh nahi payi — kripya saaf, achi roshni mein photo bhejein 🙏"
-        )
+        await _retry(f"{doc_label} clearly padh nahi payi — kripya saaf, achi roshni mein photo bhejein 🙏")
         return
 
     if doc_type == "aadhaar":
         aadhaar_number = extracted.get("id_number", "").replace(" ", "")
         if len(aadhaar_number) < 4:
-            await _send_text(phone_number_id, to,
-                "Aadhaar number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
+            await _retry("Aadhaar number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
             return
         collected["aadhaar_last4"] = aadhaar_number[-4:]
     else:
         pan_number = extracted.get("id_number", "").replace(" ", "").upper()
         if len(pan_number) != 10:
-            await _send_text(phone_number_id, to,
-                "PAN number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
+            await _retry("PAN number clearly nahi dikha. Ek baar phir saaf photo bhejein 🙏")
             return
         collected["pan_number"] = pan_number
 
