@@ -252,17 +252,27 @@ async def _handle_kyc_upload(
         collected["pan_number"] = pan_number
 
     # ── Name matching against owner_name (fuzzy, case-insensitive) ─────────────
+    e   = (extracted.get("name") or "").strip().lower()
+    owner_name = str(collected.get("owner_name", "")).strip().lower()
+    # ── Name matching against owner_name (STRICT BLOCK) ─────────────
     doc_name   = (extracted.get("name") or "").strip().lower()
     owner_name = str(collected.get("owner_name", "")).strip().lower()
     if doc_name and owner_name:
         similarity = difflib.SequenceMatcher(None, doc_name, owner_name).ratio()
         name_matches = similarity >= 0.6
-        # Only downgrade the flag, never upgrade — one mismatched doc should
-        # still show the warning even if the other doc matched fine.
+        
+        # Agar naam 60% se kam match hota hai, toh process yahin rok do
+        if not name_matches:
+            await _send_text(
+                phone_number_id, to, 
+                f"⚠️ Error: Document par naam '{doc_name.title()}' aapke diye gaye business owner naam '{owner_name.title()}' se match nahi kar raha. Kripya apna hi {doc_label} bhejein 🙏"
+            )
+            return # Function yahin return ho jayega, agla document nahi mangega
+            
         collected["kyc_name_match"] = collected.get("kyc_name_match", True) and name_matches
 
     session_ref.update({"collected": collected, "pending_choice": ""})
-    await _send_text(phone_number_id, to, f"{doc_label} mil gaya, dhanyavaad! ✅")
+    await _send_text(phone_number_id, to, f"{doc_label} scan ho gaya (Name Verified ✅), dhanyavaad!")
     await _advance(phone_number_id, to, session_ref, collected)
 
 
@@ -274,7 +284,7 @@ async def _download_whatsapp_media(media_id: str) -> bytes:
             meta_resp = await client.get(
                 f"https://graph.facebook.com/{META_API_VERSION}/{media_id}", headers=headers
             )
-            meta_resp.raise_for_status()
+            meta_resp.rdoc_namaise_for_status()
             media_url = meta_resp.json().get("url", "")
             if not media_url:
                 return b""
