@@ -154,7 +154,7 @@ EXEMPT_PATHS = {
 async def tenant_status_middleware(request: Request, call_next) -> Response:
     path = request.url.path
 
-    if path in EXEMPT_PATHS or path.startswith("/api/v1/webhook"):
+    if path in EXEMPT_PATHS or path.startswith("/api/v1/webhook") or path.startswith("/api/v1/platform"):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
@@ -165,7 +165,18 @@ async def tenant_status_middleware(request: Request, call_next) -> Response:
             JWT_SECRET    = os.getenv("JWT_SECRET", "")
             JWT_ALGORITHM = "HS256"
             claims = jose_jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            tenant_status = claims.get("tenant_status", "inactive")
+
+            # Platform admins (Saarthi-AI's own team) aren't tenants — there is
+            # no subscription concept for them. Never subject them to this check.
+            if claims.get("role") == "platform_admin":
+                return await call_next(request)
+
+            # Only tenant tokens (issued by /auth/login) carry tenant_status at
+            # all. If the claim is simply absent (any other token shape, current
+            # or future), don't guess "inactive" — let route-level auth handle it.
+            tenant_status = claims.get("tenant_status")
+            if tenant_status is None:
+                return await call_next(request)
 
             if tenant_status in ("expired", "inactive"):
                 return JSONResponse(
