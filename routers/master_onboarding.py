@@ -325,6 +325,7 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
                     }],
                     "temperature": 0.1,
                     "max_tokens": 200,
+                    "reasoning_effort": "none",  # disable <think> output — breaks our JSON parsing
                     # NOTE: response_format=json_object is deliberately omitted here —
                     # several Groq vision models return 400 when JSON mode is combined
                     # with image content. We rely on the prompt instructions instead,
@@ -343,7 +344,7 @@ async def _extract_id_document(image_bytes: bytes, doc_type: str) -> dict | None
         logger.error("Groq vision OCR failed (%s): %s | response=%s", doc_type, e, error_detail)
         return None
 
-    cleaned = raw_text.strip()
+    cleaned = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
@@ -578,10 +579,12 @@ async def _call_groq_onboarding(collected: dict, history: list[dict]) -> dict:
                     "Content-Type" : "application/json",
                 },
                 json={
-                    "model"       : GROQ_MODEL,
-                    "messages"    : messages,
-                    "temperature" : 0.4,
-                    "max_tokens"  : 400,
+                    "model"           : GROQ_MODEL,
+                    "messages"        : messages,
+                    "temperature"     : 0.4,
+                    "max_tokens"      : 400,
+                    "reasoning_effort": "none",  # Qwen3.6 thinks by default, wrapping output in <think> tags
+                    # that break JSON parsing — disable it, we don't need chain-of-thought here.
                     # NOTE: response_format=json_object deliberately omitted — this
                     # model has returned 400 with JSON mode enabled. Relying on the
                     # prompt instruction + fence-stripping below instead.
@@ -602,7 +605,7 @@ async def _call_groq_onboarding(collected: dict, history: list[dict]) -> dict:
             "collected": collected,
         }
 
-    cleaned = raw_text.strip()
+    cleaned = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
