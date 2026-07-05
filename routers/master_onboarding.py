@@ -223,7 +223,9 @@ def _claim_kyc_slot(db, session_ref, expected_pending_choice: str) -> bool:
     document. Only the request that wins the transaction gets True; the other
     gets False and should silently no-op.
     """
-    @db.transactional
+    from firebase_admin import firestore as _firestore
+
+    @_firestore.transactional
     def _txn(transaction):
         snapshot = session_ref.get(transaction=transaction)
         current = (snapshot.to_dict() or {}).get("pending_choice", "")
