@@ -29,6 +29,7 @@ expects a shape like:
 """
 
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -133,6 +134,7 @@ async def get_dashboard_config(
         "qr_code_url"              : client_data.get("qr_code_url", ""),
         "whatsapp_phone_id"        : client_data.get("whatsapp_phone_id", ""),
         "whatsapp_business_number" : client_data.get("whatsapp_business_number", ""),
+        "support_whatsapp_number"  : os.getenv("COMPANY_ADMIN_PHONE", "").lstrip("+"),
         "default_categories"       : client_data.get("default_categories", []),
         "config"                   : vertical_cfg,
     }

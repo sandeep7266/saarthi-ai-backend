@@ -1219,21 +1219,21 @@
     }
 
     var hasOwnNumber = !!cfg.whatsapp_business_number;
+    var supportNumber = cfg.support_whatsapp_number || '';
     html += '<div class="card" style="margin-bottom:16px">' +
       '<div class="section-title" style="margin-bottom:6px">WhatsApp Business Number</div>' +
       '<div class="section-sub" style="margin-bottom:14px">' +
         (hasOwnNumber
-          ? 'Your own number is connected. Customers message you directly here.'
-          : 'Your QR currently points to your personal number as a fallback. Connect your own Meta WhatsApp Business number once it\'s ready.') +
+          ? 'Aapka apna business WhatsApp number connected hai. Customers seedha yahan message karte hain.'
+          : 'Abhi aapka QR aapke personal number par kaam kar raha hai. Apna dedicated business number setup '
+            + 'karne ke liye, humari team aapko call par 5 minute mein connect kar degi — kuch bhi type karna nahi padega.') +
       '</div>' +
-      (state.connectWa && state.connectWa.error ? '<div class="error-banner">' + escapeHtml(state.connectWa.error) + '</div>' : '') +
-      '<div class="form-row"><label class="field-label">Meta Phone Number ID</label>' +
-        '<input id="wa-phone-id" class="field-input" style="margin:0" placeholder="e.g. 123456789012345" value="' + escapeHtml(cfg.whatsapp_phone_id || '') + '" /></div>' +
-      '<div class="form-row"><label class="field-label">Business WhatsApp Number</label>' +
-        '<input id="wa-business-number" class="field-input" style="margin:0" placeholder="e.g. +919876543210" value="' + escapeHtml(cfg.whatsapp_business_number || '') + '" /></div>' +
-      '<button class="btn-primary" id="settings-connect-wa-btn" ' + (state.connectWa && state.connectWa.saving ? 'disabled' : '') + '>' +
-        (state.connectWa && state.connectWa.saving ? '<span class="spinner-sm"></span>' : (hasOwnNumber ? 'Update Number' : 'Connect Number')) +
-      '</button>' +
+      (hasOwnNumber
+        ? ''
+        : '<a class="btn-primary" style="display:inline-block;text-decoration:none;text-align:center" ' +
+            'href="https://wa.me/' + escapeHtml(supportNumber) + '?text=' +
+            encodeURIComponent('Mujhe apna WhatsApp Business number connect karna hai — Saarthi-AI') + '" ' +
+            'target="_blank">Support se Connect Karein</a>') +
     '</div>';
 
     html += '<div class="card"><div class="section-title" style="margin-bottom:14px">Account</div>' +

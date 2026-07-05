@@ -61,6 +61,31 @@ async def get_client_detail(client_id: str, admin: dict = Depends(require_platfo
     return {"client_id": client_id, **doc.to_dict()}
 
 
+@router.get("/clients/pending-whatsapp-connect")
+async def list_pending_whatsapp_connect(admin: dict = Depends(require_platform_admin)):
+    """
+    Clients who paid and are active but haven't had their dedicated WhatsApp
+    Business number set up yet — the team's call-list for the white-glove
+    connect-whatsapp workflow.
+    """
+    db = get_db()
+    docs = db.collection(Collections.CLIENTS).where("status", "==", "active").stream()
+
+    pending = []
+    for doc in docs:
+        d = doc.to_dict()
+        if not d.get("whatsapp_phone_id"):
+            pending.append({
+                "client_id"    : doc.id,
+                "business_name": d.get("business_name", ""),
+                "owner_name"   : d.get("owner_name", ""),
+                "owner_phone"  : d.get("owner_phone", ""),
+                "created_at"   : d.get("created_at"),
+            })
+
+    return {"count": len(pending), "clients": pending}
+
+
 # ── Manually set a client's status (e.g. resolve a KYC mismatch review) ────────
 
 class StatusUpdateRequest(BaseModel):

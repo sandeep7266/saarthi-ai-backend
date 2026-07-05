@@ -14,12 +14,13 @@ from datetime import datetime, timezone
 from enum import Enum
 
 import razorpay
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from utils.rate_limiter import limiter, LIMIT_STRICT
 from pydantic import BaseModel, EmailStr, Field
 
 from database import get_db, Collections
+from routers.auth import require_platform_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/onboard", tags=["Onboarding"])
@@ -285,15 +286,21 @@ class ConnectWhatsAppRequest(BaseModel):
 
 @router.patch(
     "/{client_id}/connect-whatsapp",
-    summary="Connect the client's own Meta WhatsApp Business number",
+    summary="Connect the client's own Meta WhatsApp Business number (internal team only)",
     description=(
-        "Called once a client has registered their own number with Meta "
-        "(post-onboarding). Updates the tenant's routing ID (whatsapp_phone_id) "
-        "and the dialable number used for their QR code, then regenerates the "
-        "QR code to point at their own number instead of the fallback owner_phone."
+        "White-glove workflow: Saarthi-AI's internal team completes the Meta "
+        "WhatsApp Business setup on a call with the client (verifying their "
+        "number via OTP on the client's behalf), then records the resulting "
+        "Phone Number ID + dialable number here. Gated to platform admins only "
+        "— a client's own dashboard login (role=admin) cannot call this, since "
+        "the whole point is that non-technical clients never touch this step."
     ),
 )
-async def connect_whatsapp_number(client_id: str, body: ConnectWhatsAppRequest):
+async def connect_whatsapp_number(
+    client_id: str,
+    body: ConnectWhatsAppRequest,
+    admin: dict = Depends(require_platform_admin),
+):
     db = get_db()
     client_ref = db.collection(Collections.CLIENTS).document(client_id)
     client_doc = client_ref.get()
