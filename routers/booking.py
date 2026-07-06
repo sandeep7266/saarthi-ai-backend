@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-import re
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -430,8 +430,7 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "user",   "content": user_message},
                     ],
                     "temperature": 0.5,
-                    "max_tokens" : 400,
-                    "reasoning_effort": "none",
+                    "max_tokens" : 200,
                 },
             )
             resp.raise_for_status()
@@ -449,8 +448,7 @@ Never invent prices or specific slot times — those are handled separately."""
 
     if "INTENT:want_booking" in raw_text:
         intent     = "want_booking"
-        # Qwen ke <tool_call> tags ko WhatsApp user se hide karne ke liye
-        raw_text = re.sub(r"<think>.*?(?:</think>|$)", "", raw_text, flags=re.DOTALL).strip()
+        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
 
     return {"reply_text": reply_text, "intent": intent}
 
@@ -496,7 +494,9 @@ async def _initiate_booking(
         .document(slot_id)
     )
 
-    @db.transactional
+    from firebase_admin import firestore as _firestore
+
+    @_firestore.transactional
     def lock_slot_txn(transaction):
         slot_doc = slot_ref.get(transaction=transaction)
         if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
