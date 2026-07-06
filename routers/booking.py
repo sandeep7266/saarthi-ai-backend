@@ -436,7 +436,7 @@ Never invent prices or specific slot times — those are handled separately."""
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            
+            cleaned_response = re.sub(r'<think>.*?(?:</think>|$)', '', raw_text, flags=re.DOTALL)
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -445,11 +445,11 @@ Never invent prices or specific slot times — those are handled separately."""
         }
 
     intent = "conversation"
-    reply_text = raw_text
+    reply_text = cleaned_response.strip()
 
-    if "INTENT:want_booking" in raw_text:
+    if "INTENT:want_booking" in reply_text:
         intent     = "want_booking"
-        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
+        reply_text = reply_text.replace("INTENT:want_booking", "").strip()
 
     return {"reply_text": reply_text, "intent": intent}
 
