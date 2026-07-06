@@ -374,13 +374,8 @@ async def _invoke_gemini(
     customer_name: str = "",
 ) -> dict:
     """
-    AI ab sirf 2 kaam karta hai (Groq's Llama 3.3 70B se):
-    1. Friendly Hinglish conversation
-    2. Detect karna ki customer booking karna chahta hai ya nahi
-
-    Asli booking (service/staff/slot/payment) ab Web App mein hoti hai.
-    Function name '_invoke_gemini' rakha hai backward-compat ke liye
-    (booking_session.py aur dusri jagah se isi naam se call hota hai).
+    AI ab aur bhi strictly front-loaded classification ke sath kaam karega
+    taaki loops aur false links na bheje.
     """
     persona_name  = bot_profile.get("persona_name", "Priya")
     business_type = bot_profile.get("business_type", "salon")
@@ -391,22 +386,24 @@ async def _invoke_gemini(
 
     name_context = f"Customer ka naam {customer_name} hai." if customer_name else "Customer ka naam abhi pata nahi hai."
 
+    # 🧠 NEW UPGRADED STRICT PROMPT
     system_prompt = f"""You are {persona_name}, a warm AI receptionist for a {business_type} business.
 Communicate in Hinglish (Hindi-English mix). Keep replies SHORT (2-3 lines max).
 {name_context}
 
-YOUR ONLY JOB:
-1. Greet warmly and chat naturally about services/timing in general terms.
-2. Detect if the customer wants to BOOK an appointment (any sign of booking intent:
-   mentions a service, asks about availability, says "book karna hai", etc.)
-3. When booking intent is detected, output EXACTLY this marker at the end:
-   INTENT:want_booking
-4. For general chat (greetings, questions about hours, etc.) do NOT output the marker.
+CRITICAL INSTRUCTION — YOU MUST START YOUR RESPONSE WITH ONE OF THESE TWO PREFIXES:
+1. Start with '[BOOKING]' ONLY if the customer explicitly says they want to book an appointment, ask for a booking link, or wants to block a slot right now.
+2. Start with '[CHAT]' for everything else (greetings like hi/hello, asking about timing/prices, cancellations, general questions, or casual talk).
+
+EXAMPLES:
+- User: Hi -> Response: [CHAT] Hello! Kaise hain aap? Kaise madad karu aapki?
+- User: Mujhe booking karni hai -> Response: [BOOKING] Sure! Main aapki booking ka link share karti hoon.
+- User: Cancel kar do -> Response: [CHAT] Koi baat nahi, aapka session cancel kar diya hai. Jab sahi lage tab batana!
 
 CONVERSATION HISTORY:
 {history_text}
 
-Never invent prices or specific slot times — those are handled separately."""
+Never invent specific slot times."""
 
     if not GROQ_API_KEY:
         logger.error("GROQ_API_KEY not configured.")
@@ -429,7 +426,7 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.5,
+                    "temperature": 0.1,  # Strict temperature for logical accuracy
                     "max_tokens" : 200,
                 },
             )
@@ -443,6 +440,23 @@ Never invent prices or specific slot times — those are handled separately."""
             "intent"    : "error",
         }
 
+    # 🛠️ SMART PARSING LOGIC BASED ON PREFIX
+    intent = "conversation"
+    reply_text = raw_text
+
+    if raw_text.startswith("[BOOKING]"):
+        intent = "want_booking"
+        reply_text = raw_text.replace("[BOOKING]", "").strip()
+    elif raw_text.startswith("[CHAT]"):
+        intent = "conversation"
+        reply_text = raw_text.replace("[CHAT]", "").strip()
+    else:
+        # Safe fallback agar AI prefix bhool jaye
+        if "INTENT:want_booking" in raw_text:
+            intent = "want_booking"
+            reply_text = raw_text.replace("INTENT:want_booking", "").strip()
+
+    return {"reply_text": reply_text, "intent": intent}
     intent = "conversation"
     reply_text = raw_text
 
