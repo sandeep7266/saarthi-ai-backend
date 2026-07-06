@@ -13,10 +13,11 @@ ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
 
 import os
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-import re
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -436,7 +437,7 @@ Never invent prices or specific slot times — those are handled separately."""
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            cleaned_response = re.sub(r'<think>.*?(?:</think>|$)', '', raw_text, flags=re.DOTALL)
+            raw_text = re.sub(r'<think>.*?(?:</think>|$)', '', raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -445,11 +446,11 @@ Never invent prices or specific slot times — those are handled separately."""
         }
 
     intent = "conversation"
-    reply_text = cleaned_response.strip()
+    reply_text = raw_text
 
-    if "INTENT:want_booking" in reply_text:
+    if "INTENT:want_booking" in raw_text:
         intent     = "want_booking"
-        reply_text = reply_text.replace("INTENT:want_booking", "").strip()
+        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
 
     return {"reply_text": reply_text, "intent": intent}
 
