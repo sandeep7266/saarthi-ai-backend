@@ -449,7 +449,7 @@ Never invent prices or specific slot times — those are handled separately."""
     if "INTENT:want_booking" in raw_text:
         intent     = "want_booking"
         # Qwen ke <tool_call> tags ko WhatsApp user se hide karne ke liye
-        raw_text = re.sub(r"<tool_call>.*?</tool_call>", "", raw_text, flags=re.DOTALL).strip()
+        raw_text = re.sub(r"<think>.*?(?:</think>|$)", "", raw_text, flags=re.DOTALL).strip()
 
     return {"reply_text": reply_text, "intent": intent}
 
