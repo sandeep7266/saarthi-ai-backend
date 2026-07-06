@@ -549,7 +549,7 @@ async def _initiate_booking(
             "reminder_enable": False,
             "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
-            "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
+            "callback_url"  : f"{APP_BASE_URL}/api/v1/@app.postbooking-success",
             "callback_method": "get",
         })
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
