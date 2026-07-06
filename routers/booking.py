@@ -501,33 +501,10 @@ async def _initiate_booking(
     @_firestore.transactional
     def lock_slot_txn(transaction):
         slot_doc = slot_ref.get(transaction=transaction)
-        if not slot_doc.exists:
+        if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
             raise ValueError("Slot no longer available")
-            
-        current_status = slot_doc.to_dict().get("status")
-        
-        # 🚨 IDEMPOTENCY / DOUBLE-CLICK INTEGRATION
-        # Agar status 'available' nahi hai, toh check karo kya isi user ne lock kiya tha
-        if current_status != "available":
-            recent_bookings = (
-                db.collection(Collections.CLIENTS)
-                .document(client_id)
-                .collection(Collections.BOOKINGS)
-                .where("slot_id", "==", slot_id)
-                .where("customer_phone", "==", customer_phone)
-                .where("status", "==", "pending_payment")
-                .limit(1)
-                .get(transaction=transaction)
-            )
-            
-            # Agar is customer ki pehle se koi pending booking nahi hai, tabhi error do
-            if not recent_bookings:
-                raise ValueError("Slot no longer available")
-            
-            logger.info(f"Retry/Double-click safe path activated for customer: {customer_phone}")
-
-        # Slot valid hai, toh transaction safe execute hone do
         transaction.update(slot_ref, {"status": "pending_payment", "locked_at": now})
+
     try:
         transaction = db.transaction()
         lock_slot_txn(transaction)
