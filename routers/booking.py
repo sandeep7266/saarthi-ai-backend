@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-
+import re
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -436,6 +436,12 @@ Never invent prices or specific slot times — those are handled separately."""
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
+            # 🧹 JADUI FILTER: <think> tags ko udaane ke liye
+            cleaned_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL)
+            cleaned_text = re.sub(r'<think>.*', '', cleaned_text, flags=re.DOTALL) # Safe backup
+            
+            # Ab 'raw_text' ko 'cleaned_text' se replace kar dein taaki aage ka code smooth chale
+            raw_text = cleaned_text.strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
