@@ -7,7 +7,7 @@ Customer Web Booking flow:
 4. Web app session se customer details fetch karta hai
 5. Customer service+staff+slot select karta hai → payment → booking confirm
 """
-from google.cloud import firestore
+from google.cloud.firestore import FieldFilter
 from fastapi import APIRouter, HTTPException, Query, Request # <-- Add Request here
 import logging
 import os

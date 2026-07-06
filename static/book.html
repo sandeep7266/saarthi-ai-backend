@@ -217,6 +217,23 @@
 
   .fatal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; text-align: center; }
   .fatal-msg { font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; text-align: center; }
+
+  .pending-banner {
+    margin: 14px 20px 0; padding: 12px 14px; border-radius: 12px;
+    background: #FFF7ED; border: 1px solid #FED7AA; font-size: 12.5px; color: #9A3412;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .pending-banner-text { line-height: 1.4; }
+  .pending-cancel-btn {
+    flex-shrink: 0; background: #fff; border: 1px solid #FDBA74; color: #9A3412;
+    font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .pending-cancel-btn:disabled { opacity: 0.6; }
+  .step-cancel-link {
+    display: block; text-align: center; background: none; border: none;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-soft); text-decoration: underline;
+    padding: 14px 20px 0; cursor: pointer; width: 100%;
+  }
 </style>
 </head>
 <body>
@@ -262,7 +279,8 @@
     activeDay: null,
     payLoading: false,
     payError: '',
-    bookingId: ''
+    bookingId: '',
+    cancelLoading: false
   };
 
   var appEl = document.getElementById('app');
@@ -284,6 +302,7 @@
     if (state.fatalError) { appEl.innerHTML = renderFatal('This link has expired', escapeHtml(state.fatalError) + ' Please send a message on WhatsApp to get a fresh booking link.'); return; }
 
     var html = renderHeader();
+    if (state.step < 3 && state.session && state.session.pending_booking_id) html += renderPendingBanner();
     if (state.step < 3) html += renderProgress();
 
     if (state.step === 0) html += renderServiceStep();
@@ -293,6 +312,15 @@
 
     appEl.innerHTML = html;
     attachHandlers();
+  }
+
+  function renderPendingBanner() {
+    return '<div class="pending-banner">' +
+      '<div class="pending-banner-text">You have an unpaid booking in progress from earlier.</div>' +
+      '<button class="pending-cancel-btn" data-action="cancel-pending" ' + (state.cancelLoading ? 'disabled' : '') + '>' +
+        (state.cancelLoading ? '…' : 'Cancel it') +
+      '</button>' +
+    '</div>';
   }
 
   function renderLoading() {
@@ -490,6 +518,7 @@
       '</div>' +
       (state.payError ? '<div class="error-box">' + escapeHtml(state.payError) + '</div>' : '') +
       '<div class="fine-print">Secure payment via Razorpay. Your slot is held for 15 minutes.</div>' +
+      '<button class="step-cancel-link" data-action="cancel-selection">Cancel booking</button>' +
     '</div>';
     return html;
   }
@@ -565,6 +594,41 @@
 
     var payBtn = appEl.querySelector('[data-action="pay"]');
     if (payBtn) payBtn.addEventListener('click', handlePay);
+
+    var cancelSelectionBtn = appEl.querySelector('[data-action="cancel-selection"]');
+    if (cancelSelectionBtn) cancelSelectionBtn.addEventListener('click', function () {
+      state.step = 0;
+      state.selectedServiceIds = [];
+      state.selectedSlot = null;
+      state.payError = '';
+      render();
+    });
+
+    var cancelPendingBtn = appEl.querySelector('[data-action="cancel-pending"]');
+    if (cancelPendingBtn) cancelPendingBtn.addEventListener('click', handleCancelPending);
+  }
+
+  function handleCancelPending() {
+    state.cancelLoading = true;
+    render();
+
+    var sessionToken = getSessionToken();
+    fetch(API_BASE + '/api/v1/booking-session/' + sessionToken + '/cancel', { method: 'PATCH' })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) throw new Error(data.detail || 'Could not cancel booking.');
+          return data;
+        });
+      })
+      .then(function () {
+        state.cancelLoading = false;
+        boot(); // re-fetch session so the freed slot shows up as available again
+      })
+      .catch(function (err) {
+        state.cancelLoading = false;
+        render();
+        alert(err.message);
+      });
   }
 
   function handlePay() {
@@ -615,6 +679,12 @@
       render();
       return;
     }
+
+    state.loading = true;
+    state.step = 0;
+    state.selectedServiceIds = [];
+    state.selectedSlot = null;
+    render();
 
     fetch(API_BASE + '/api/v1/booking-session/' + sessionToken)
       .then(function (resp) {
