@@ -430,7 +430,8 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "user",   "content": user_message},
                     ],
                     "temperature": 0.5,
-                    "max_tokens" : 200,
+                    "max_tokens" : 400,
+                    "reasoning_effort": "none",
                 },
             )
             resp.raise_for_status()
