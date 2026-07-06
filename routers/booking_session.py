@@ -164,6 +164,7 @@ async def get_session(request: Request, session_token: str):
         "customer_phone" : session.get("customer_phone", ""),
         "services"       : services,
         "slots"          : slots,
+        "pending_booking_id": session.get("booking_id") if session.get("status") == "awaiting_payment" else None,
     }
 
 
@@ -260,6 +261,72 @@ async def select_service_slot(request: Request, session_token: str, body: Update
         "booking_id"  : result["booking_id"],
         "payment_link": result["payment_link"],
     }
+
+
+# ── Cancel a pending (unpaid) booking on this session ─────────────────────────
+
+@router.patch("/{session_token}/cancel")
+@limiter.limit(LIMIT_NORMAL)
+async def cancel_pending_booking(request: Request, session_token: str):
+    """
+    Customer picked a slot + clicked Pay, then abandoned Razorpay checkout and
+    came back. Rather than making them wait for the 15-minute auto-expiry
+    (utils/booking_expiry.py), this releases the slot immediately so they can
+    pick a different one right away.
+    """
+    db = get_db()
+    session_ref = db.collection("booking_sessions").document(session_token)
+    session_doc = session_ref.get()
+
+    if not session_doc.exists:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    session = session_doc.to_dict()
+    booking_id = session.get("booking_id")
+
+    if not booking_id or session.get("status") != "awaiting_payment":
+        return {"success": True, "message": "No pending booking to cancel."}
+
+    client_id = session["client_id"]
+    booking_ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection(Collections.BOOKINGS)
+        .document(booking_id)
+    )
+    booking_doc = booking_ref.get()
+
+    if booking_doc.exists and booking_doc.to_dict().get("status") == "pending_payment":
+        booking_data = booking_doc.to_dict()
+        slot_id = booking_data.get("slot_id")
+        now = datetime.now(timezone.utc)
+
+        batch = db.batch()
+        batch.update(booking_ref, {
+            "status"      : "cancelled",
+            "cancelled_at": now,
+            "cancelled_by": "customer",
+        })
+        if slot_id:
+            slot_ref = (
+                db.collection(Collections.CLIENTS)
+                .document(client_id)
+                .collection(Collections.SLOTS)
+                .document(slot_id)
+            )
+            slot_doc = slot_ref.get()
+            if slot_doc.exists and slot_doc.to_dict().get("status") == "pending_payment":
+                batch.update(slot_ref, {
+                    "status"     : "available",
+                    "booking_id" : None,
+                    "locked_at"  : None,
+                    "updated_at" : now,
+                })
+        batch.commit()
+
+    session_ref.update({"booking_id": None, "status": "in_progress"})
+
+    return {"success": True, "message": "Booking cancelled. Slot released."}
 
 
 # ── Mark Session Completed (called internally by payments webhook) ───────────
