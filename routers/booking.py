@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-
+import re
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -448,7 +448,8 @@ Never invent prices or specific slot times — those are handled separately."""
 
     if "INTENT:want_booking" in raw_text:
         intent     = "want_booking"
-        reply_text = raw_text.replace("INTENT:want_booking", "").strip()
+        # Qwen ke <tool_call> tags ko WhatsApp user se hide karne ke liye
+        raw_text = re.sub(r"<tool_call>.*?</tool_call>", "", raw_text, flags=re.DOTALL).strip()
 
     return {"reply_text": reply_text, "intent": intent}
 
