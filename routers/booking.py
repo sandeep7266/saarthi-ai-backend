@@ -13,7 +13,6 @@ ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
 
 import os
 import logging
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,7 +20,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
+
 from database import get_db, Collections
 
 logger = logging.getLogger(__name__)
@@ -56,8 +55,7 @@ async def whatsapp_verify(
 # ── Main Incoming Message Handler (POST) ──────────────────────────────────────
 
 @router.post("/whatsapp")
-#async def whatsapp_incoming(request: Request, @router.post("/whatsapp")
-async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks):
+async def whatsapp_incoming(request: Request):
     """
     Ingestion gateway for Meta WhatsApp Cloud API messages.
     NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
@@ -109,11 +107,11 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
+            # No active client owns this phone_number_id — this is either a
+            # brand-new prospective client, or a message on the company's own
+            # onboarding number. Hand off to the Master Onboarding Bot.
             from routers.master_onboarding import handle_onboarding_message
-            
-            # Ye task ab background mein chalega, aur server turant reply dega
-            background_tasks.add_task(
-                handle_onboarding_message,
+            await handle_onboarding_message(
                 phone_number_id=phone_number_id,
                 from_number=from_number,
                 msg_body=msg_body,
@@ -122,6 +120,7 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
                 media_type=media_type,
             )
             return {"status": "ok"}
+
         if client_data.get("status") != "active":
             return {"status": "ok"}
 
@@ -136,17 +135,6 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # activate kiya gaya ho (Razorpay webhook se nahi guzra).
         bot_profile = dict(client_data.get("gemini_bot_profile", {}))
         bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
-
-        # ── Cancel — works while waiting for name (only WhatsApp-side state) ────
-        # Once the customer moves to book.html, abandoning there is already
-        # handled by the 15-min stale-booking auto-expiry (utils/booking_expiry.py).
-        cancel_keywords = {"cancel", "cancel karo", "band karo", "ruk jao", "stop",
-                           "roko", "nahi karna", "chodo", "chhod do", "exit", "quit"}
-        if msg_body.strip().lower() in cancel_keywords and _is_awaiting_name(client_id, from_number):
-            _clear_awaiting_name(client_id, from_number)
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Theek hai, booking cancel kar diya. 🙏 Jab bhi chahein, dobara message kar dein.")
-            return {"status": "ok"}
 
         # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
@@ -437,7 +425,6 @@ Never invent prices or specific slot times — those are handled separately."""
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            raw_text = re.sub(r'<think>.*?(?:</think>|$)', '', raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -496,9 +483,7 @@ async def _initiate_booking(
         .document(slot_id)
     )
 
-    from firebase_admin import firestore as _firestore
-
-    @_firestore.transactional
+    @db.transactional
     def lock_slot_txn(transaction):
         slot_doc = slot_ref.get(transaction=transaction)
         if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
