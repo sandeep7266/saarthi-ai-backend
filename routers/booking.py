@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-
+import re
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -433,6 +433,10 @@ Never invent specific slot times."""
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
+            # 1. Poore closed think tags udao (Case-insensitive (?i) ke sath)
+            raw_text = re.sub(r'(?i)<think>.*?</think>', '', raw_text, flags=re.DOTALL)
+            # 2. Agar token khatam hone se tag adhoora reh gaya ho, toh use bhi udao
+            raw_text = re.sub(r'(?i)<think>.*', '',raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
