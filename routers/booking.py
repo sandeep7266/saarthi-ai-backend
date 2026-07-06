@@ -427,7 +427,7 @@ Never invent specific slot times."""
                         {"role": "user",   "content": user_message},
                     ],
                     "temperature": 0.1,  # Strict temperature for logical accuracy
-                    "max_tokens" : 200,
+                    "max_tokens" : 1024,
                 },
             )
             resp.raise_for_status()
