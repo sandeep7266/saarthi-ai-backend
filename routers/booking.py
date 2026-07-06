@@ -136,6 +136,17 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         bot_profile = dict(client_data.get("gemini_bot_profile", {}))
         bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
 
+        # ── Cancel — works while waiting for name (only WhatsApp-side state) ────
+        # Once the customer moves to book.html, abandoning there is already
+        # handled by the 15-min stale-booking auto-expiry (utils/booking_expiry.py).
+        cancel_keywords = {"cancel", "cancel karo", "band karo", "ruk jao", "stop",
+                           "roko", "nahi karna", "chodo", "chhod do", "exit", "quit"}
+        if msg_body.strip().lower() in cancel_keywords and _is_awaiting_name(client_id, from_number):
+            _clear_awaiting_name(client_id, from_number)
+            _send_whatsapp_text(phone_number_id, from_number,
+                "Theek hai, booking cancel kar diya. 🙏 Jab bhi chahein, dobara message kar dein.")
+            return {"status": "ok"}
+
         # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
             user_message=msg_body,
@@ -549,7 +560,7 @@ async def _initiate_booking(
             "reminder_enable": False,
             "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
-            "callback_url"  : f"{APP_BASE_URL}/api/v1/@app.postbooking-success",
+            "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
         })
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}

@@ -120,6 +120,12 @@ TUMHE SIRF EK VALID JSON OBJECT SE REPLY KARNA HAI, KUCH AUR NAHI (no markdown, 
 
 # ── Entry point — called from booking.py when tenant not found ────────────────
 
+CANCEL_KEYWORDS = {
+    "cancel", "cancel karo", "band karo", "ruk jao", "stop", "roko",
+    "nahi karna", "chodo", "chhod do", "exit", "quit",
+}
+
+
 async def handle_onboarding_message(
     phone_number_id: str,
     from_number: str,
@@ -131,6 +137,17 @@ async def handle_onboarding_message(
     db = get_db()
     session_ref = db.collection(ONBOARDING_SESSIONS).document(from_number)
     session_doc = session_ref.get()
+
+    # ── Global cancel — works at ANY step, regardless of what's pending ────────
+    user_text_lower = (msg_body or "").strip().lower()
+    if session_doc.exists and user_text_lower in CANCEL_KEYWORDS:
+        session_ref.update({"status": "cancelled", "pending_choice": ""})
+        await _send_text(
+            phone_number_id, from_number,
+            "Theek hai, registration cancel kar diya. 🙏 Jab bhi shuru karna ho, "
+            "bas *'Hi'* bhej dein — hum wahin se naya start karenge."
+        )
+        return
 
     if not session_doc.exists:
         session = _create_session(session_ref)
@@ -144,6 +161,11 @@ async def handle_onboarding_message(
             "Koi help chahiye toh support@saarthi-ai.in pe likhein. 🙏"
         )
         return
+
+    if session.get("status") == "cancelled":
+        # They cancelled earlier and are messaging again — start clean rather
+        # than resuming stale collected data from the cancelled attempt.
+        session = _create_session(session_ref)
 
     collected      = session.get("collected", {})
     pending_choice = session.get("pending_choice", "")
