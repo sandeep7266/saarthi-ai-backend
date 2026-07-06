@@ -219,11 +219,35 @@
       });
   }
 
-  function logout() {
+  var IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  var idleTimer = null;
+
+  function logout(reason) {
+    stopIdleTimer();
     localStorage.removeItem(TOKEN_KEY);
     state.token = null; state.claims = null; state.screen = 'login';
+    state.loginError = reason || '';
     render();
   }
+
+  function startIdleTimer() {
+    stopIdleTimer();
+    idleTimer = setTimeout(function () {
+      logout('Session expired due to inactivity. Please log in again.');
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  function stopIdleTimer() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  }
+
+  function resetIdleTimer() {
+    if (state.screen === 'console') startIdleTimer();
+  }
+
+  ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(function (evt) {
+    document.addEventListener(evt, resetIdleTimer, { passive: true });
+  });
 
   function boot() {
     var saved = localStorage.getItem(TOKEN_KEY);
@@ -234,6 +258,7 @@
     state.screen = 'console';
     render();
     loadPendingWa();
+    startIdleTimer();
   }
 
   // ── Login ────────────────────────────────────────────────────────────────────
@@ -340,7 +365,7 @@
 
   function attachShellHandlers() {
     var logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+    if (logoutBtn) logoutBtn.addEventListener('click', function () { logout(); });
 
     var menuBtn = document.getElementById('menu-btn');
     if (menuBtn) menuBtn.addEventListener('click', function () { state.railOpen = !state.railOpen; render(); });
@@ -462,21 +487,29 @@
     }
 
     html += '<div class="card" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">' +
-      '<table><thead><tr><th>Business</th><th>Status</th><th>Plan</th><th>KYC</th><th></th></tr></thead><tbody>';
+      '<table><thead><tr><th>Business</th><th>Status</th><th>Plan</th><th>KYC</th><th>WhatsApp</th><th></th></tr></thead><tbody>';
 
     state.clients.forEach(function (c) {
+      var isConnected = !!c.whatsapp_phone_id;
       html += '<tr data-client-id="' + escapeHtml(c.client_id) + '">' +
         '<td><div style="font-weight:600">' + escapeHtml(c.business_name || '—') + '</div>' +
           '<div class="mono" style="color:var(--text-mute);font-size:11.5px">' + escapeHtml(c.client_id) + '</div></td>' +
         '<td><span class="status-chip status-' + escapeHtml(c.status || 'inactive') + '">' + escapeHtml(c.status || 'inactive') + '</span></td>' +
         '<td>' + escapeHtml(c.plan || '—') + '</td>' +
         '<td>' + (c.kyc_review_needed ? '<span class="kyc-flag">⚠ Review needed</span>' : '<span style="color:var(--text-mute)">OK</span>') + '</td>' +
-        '<td>' +
+        '<td>' + (isConnected
+            ? '<span style="color:var(--green);font-size:12px;font-weight:700">● Connected</span>'
+            : '<span style="color:var(--text-mute);font-size:12px">Fallback (owner)</span>') + '</td>' +
+        '<td style="display:flex;gap:6px;align-items:center">' +
           '<select class="field-input status-select" style="margin:0;padding:6px 8px;font-size:12.5px;width:auto">' +
             ['active', 'inactive', 'suspended', 'expired'].map(function (s) {
               return '<option value="' + s + '"' + (c.status === s ? ' selected' : '') + '>' + s + '</option>';
             }).join('') +
           '</select>' +
+          (isConnected
+            ? '<button class="btn-ghost btn-danger disconnect-wa-btn" style="padding:6px 10px;font-size:12px" ' +
+                'data-client-id="' + escapeHtml(c.client_id) + '">Disconnect</button>'
+            : '') +
         '</td>' +
       '</tr>';
     });
@@ -496,6 +529,18 @@
         })
           .then(function () { showToast('Status updated.', 'success'); loadClients(); })
           .catch(function (err) { showToast(err.message, 'error'); });
+      });
+    });
+
+    document.querySelectorAll('.disconnect-wa-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var clientId = btn.getAttribute('data-client-id');
+        if (!confirm('Disconnect this client\'s WhatsApp number? Their QR will fall back to the owner\'s personal number.')) return;
+
+        btn.disabled = true;
+        apiFetch('/api/v1/onboard/' + encodeURIComponent(clientId) + '/disconnect-whatsapp', { method: 'PATCH' })
+          .then(function () { showToast('Disconnected. QR reverted to fallback.', 'success'); loadClients(); loadPendingWa(); })
+          .catch(function (err) { btn.disabled = false; showToast(err.message, 'error'); });
       });
     });
   }

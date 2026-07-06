@@ -339,6 +339,59 @@ async def connect_whatsapp_number(
     }
 
 
+@router.patch(
+    "/{client_id}/disconnect-whatsapp",
+    summary="Disconnect a client's WhatsApp number (internal team only)",
+    description=(
+        "Clears whatsapp_phone_id and whatsapp_business_number, falling the QR "
+        "back to owner_phone. Mainly used to free up a shared test number "
+        "between onboarding tests and customer-flow tests during development."
+    ),
+)
+async def disconnect_whatsapp_number(
+    client_id: str,
+    admin: dict = Depends(require_platform_admin),
+):
+    db = get_db()
+    client_ref = db.collection(Collections.CLIENTS).document(client_id)
+    client_doc = client_ref.get()
+
+    if not client_doc.exists:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    client_data = client_doc.to_dict()
+    owner_phone = client_data.get("owner_phone", "")
+
+    client_ref.update({
+        "whatsapp_phone_id"        : "",
+        "whatsapp_business_number" : "",
+        "updated_at"               : datetime.now(timezone.utc),
+    })
+
+    # ── Fall QR back to owner_phone (same fallback used at initial activation) ──
+    from utils.qr_generator import generate_client_qr
+
+    qr_url = ""
+    if owner_phone:
+        try:
+            qr_url = generate_client_qr(
+                client_id=client_id,
+                business_name=client_data.get("business_name", ""),
+                whatsapp_number=owner_phone,
+            )
+            if qr_url:
+                client_ref.update({"qr_code_url": qr_url})
+        except Exception as e:
+            logger.error("QR fallback regeneration failed for client %s: %s", client_id, e)
+
+    return {
+        "success": True,
+        "client_id": client_id,
+        "qr_code_url": qr_url,
+        "message": "WhatsApp number disconnected. QR reverted to owner's personal number.",
+    }
+
+
 # ── Payment Success Redirect Page ───────────────────────────────────────────────
 
 @router.get("/success", response_class=HTMLResponse)
