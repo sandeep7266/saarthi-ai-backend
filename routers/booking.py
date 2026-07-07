@@ -16,11 +16,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-import re
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
+
 from database import get_db, Collections
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,7 @@ async def whatsapp_verify(
 # ── Main Incoming Message Handler (POST) ──────────────────────────────────────
 
 @router.post("/whatsapp")
-#async def whatsapp_incoming(request: Request, @router.post("/whatsapp")
-async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks):
+async def whatsapp_incoming(request: Request):
     """
     Ingestion gateway for Meta WhatsApp Cloud API messages.
     NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
@@ -108,11 +107,11 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
+            # No active client owns this phone_number_id — this is either a
+            # brand-new prospective client, or a message on the company's own
+            # onboarding number. Hand off to the Master Onboarding Bot.
             from routers.master_onboarding import handle_onboarding_message
-            
-            # Ye task ab background mein chalega, aur server turant reply dega
-            background_tasks.add_task(
-                handle_onboarding_message,
+            await handle_onboarding_message(
                 phone_number_id=phone_number_id,
                 from_number=from_number,
                 msg_body=msg_body,
@@ -121,6 +120,7 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
                 media_type=media_type,
             )
             return {"status": "ok"}
+
         if client_data.get("status") != "active":
             return {"status": "ok"}
 
@@ -135,17 +135,6 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # activate kiya gaya ho (Razorpay webhook se nahi guzra).
         bot_profile = dict(client_data.get("gemini_bot_profile", {}))
         bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
-
-        # ── Cancel — works while waiting for name (only WhatsApp-side state) ────
-        # Once the customer moves to book.html, abandoning there is already
-        # handled by the 15-min stale-booking auto-expiry (utils/booking_expiry.py).
-        cancel_keywords = {"cancel", "cancel karo", "band karo", "ruk jao", "stop",
-                           "roko", "nahi karna", "chodo", "chhod do", "exit", "quit"}
-        if msg_body.strip().lower() in cancel_keywords and _is_awaiting_name(client_id, from_number):
-            _clear_awaiting_name(client_id, from_number)
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Theek hai, booking cancel kar diya. 🙏 Jab bhi chahein, dobara message kar dein.")
-            return {"status": "ok"}
 
         # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
@@ -374,8 +363,13 @@ async def _invoke_gemini(
     customer_name: str = "",
 ) -> dict:
     """
-    AI ab aur bhi strictly front-loaded classification ke sath kaam karega
-    taaki loops aur false links na bheje.
+    AI ab sirf 2 kaam karta hai (Groq's Llama 3.3 70B se):
+    1. Friendly Hinglish conversation
+    2. Detect karna ki customer booking karna chahta hai ya nahi
+
+    Asli booking (service/staff/slot/payment) ab Web App mein hoti hai.
+    Function name '_invoke_gemini' rakha hai backward-compat ke liye
+    (booking_session.py aur dusri jagah se isi naam se call hota hai).
     """
     persona_name  = bot_profile.get("persona_name", "Priya")
     business_type = bot_profile.get("business_type", "salon")
@@ -386,24 +380,22 @@ async def _invoke_gemini(
 
     name_context = f"Customer ka naam {customer_name} hai." if customer_name else "Customer ka naam abhi pata nahi hai."
 
-    # 🧠 NEW UPGRADED STRICT PROMPT
     system_prompt = f"""You are {persona_name}, a warm AI receptionist for a {business_type} business.
 Communicate in Hinglish (Hindi-English mix). Keep replies SHORT (2-3 lines max).
 {name_context}
 
-CRITICAL INSTRUCTION — YOU MUST START YOUR RESPONSE WITH ONE OF THESE TWO PREFIXES:
-1. Start with '[BOOKING]' ONLY if the customer explicitly says they want to book an appointment, ask for a booking link, or wants to block a slot right now.
-2. Start with '[CHAT]' for everything else (greetings like hi/hello, asking about timing/prices, cancellations, general questions, or casual talk).
-
-EXAMPLES:
-- User: Hi -> Response: [CHAT] Hello! Kaise hain aap? Kaise madad karu aapki?
-- User: Mujhe booking karni hai -> Response: [BOOKING] Sure! Main aapki booking ka link share karti hoon.
-- User: Cancel kar do -> Response: [CHAT] Koi baat nahi, aapka session cancel kar diya hai. Jab sahi lage tab batana!
+YOUR ONLY JOB:
+1. Greet warmly and chat naturally about services/timing in general terms.
+2. Detect if the customer wants to BOOK an appointment (any sign of booking intent:
+   mentions a service, asks about availability, says "book karna hai", etc.)
+3. When booking intent is detected, output EXACTLY this marker at the end:
+   INTENT:want_booking
+4. For general chat (greetings, questions about hours, etc.) do NOT output the marker.
 
 CONVERSATION HISTORY:
 {history_text}
 
-Never invent specific slot times."""
+Never invent prices or specific slot times — those are handled separately."""
 
     if not GROQ_API_KEY:
         logger.error("GROQ_API_KEY not configured.")
@@ -426,17 +418,13 @@ Never invent specific slot times."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.1,  # Strict temperature for logical accuracy
-                    "max_tokens" : 1024,
+                    "temperature": 0.5,
+                    "max_tokens" : 200,
                 },
             )
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            # 1. Poore closed think tags udao (Case-insensitive (?i) ke sath)
-            raw_text = re.sub(r'(?i)<think>.*?</think>', '', raw_text, flags=re.DOTALL)
-            # 2. Agar token khatam hone se tag adhoora reh gaya ho, toh use bhi udao
-            raw_text = re.sub(r'(?i)<think>.*', '',raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -444,23 +432,6 @@ Never invent specific slot times."""
             "intent"    : "error",
         }
 
-    # 🛠️ SMART PARSING LOGIC BASED ON PREFIX
-    intent = "conversation"
-    reply_text = raw_text
-
-    if raw_text.startswith("[BOOKING]"):
-        intent = "want_booking"
-        reply_text = raw_text.replace("[BOOKING]", "").strip()
-    elif raw_text.startswith("[CHAT]"):
-        intent = "conversation"
-        reply_text = raw_text.replace("[CHAT]", "").strip()
-    else:
-        # Safe fallback agar AI prefix bhool jaye
-        if "INTENT:want_booking" in raw_text:
-            intent = "want_booking"
-            reply_text = raw_text.replace("INTENT:want_booking", "").strip()
-
-    return {"reply_text": reply_text, "intent": intent}
     intent = "conversation"
     reply_text = raw_text
 
@@ -512,9 +483,7 @@ async def _initiate_booking(
         .document(slot_id)
     )
 
-    from firebase_admin import firestore as _firestore
-
-    @_firestore.transactional
+    @db.transactional
     def lock_slot_txn(transaction):
         slot_doc = slot_ref.get(transaction=transaction)
         if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
