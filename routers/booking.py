@@ -13,10 +13,11 @@ ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
 
 import os
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import re
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -668,21 +669,23 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.5,
-                    "max_tokens" : 200,
+                    "temperature": 0.2,
+                    "max_tokens" : 1024,
+                    "reasoning_effort": "none",  # Qwen3.6 thinks by default, wrapping output in <think> tags
                 },
             )
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            raw_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL)
-            raw_text = re.sub(r'<think>.*', '', raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
             "reply_text": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
             "intent"    : "error",
         }
+
+    # Safety net in case reasoning_effort isn't fully respected by this model version
+    raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
 
     intent = "conversation"
     reply_text = raw_text
