@@ -256,6 +256,8 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
 
     except (KeyError, IndexError) as e:
         logger.debug("Webhook payload parse skip (likely non-message event): %s", e)
+    except Exception as e:
+        logger.error("Unhandled error in whatsapp_incoming: %s", e, exc_info=True)
 
     return {"status": "ok"}
 
@@ -805,7 +807,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 900),
+            "expire_by"     : int(now.timestamp() + 1800),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
