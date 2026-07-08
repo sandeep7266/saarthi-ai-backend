@@ -66,6 +66,33 @@ def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
         logger.error("WhatsApp send failed for %s: %s", to, e)
 
 
+def _send_whatsapp_buttons(phone_number_id: str, to: str, body_text: str, buttons: list[dict]) -> None:
+    """Send an interactive button message (max 3 buttons: [{'id','title'}, ...])."""
+    import httpx
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to"  : to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": b["id"], "title": b["title"][:20]}}
+                    for b in buttons[:3]
+                ]
+            },
+        },
+    }
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    try:
+        resp = httpx.post(url, json=payload, headers=headers, timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error("WhatsApp buttons send failed for %s: %s", to, e)
+
+
 def _send_whatsapp_document(phone_number_id: str, to: str, doc_url: str, filename: str, caption: str) -> None:
     """Send a document (PDF invoice) via WhatsApp."""
     import httpx
@@ -436,3 +463,13 @@ async def _handle_b2c_booking_payment(entity: dict) -> None:
                 f"invoice_{booking_id}.pdf",
                 f"Booking Invoice — {business_name}"
             )
+
+        # ── Post-booking control: let the customer decide what happens next ────
+        _send_whatsapp_buttons(
+            phone_number_id, customer_phone,
+            "Kuch aur chahiye?",
+            [
+                {"id": "post_booking_start_new", "title": "🔄 Book Again"},
+                {"id": "post_booking_stop",      "title": "🔕 Stop Updates"},
+            ],
+        )

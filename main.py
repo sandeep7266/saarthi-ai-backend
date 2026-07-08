@@ -36,6 +36,7 @@ from routers.dashboard_config import router as dashboard_config_router
 from routers.platform_admin import router as platform_admin_router
 from utils.rate_limiter import limiter
 from utils.booking_expiry import expire_stale_pending_bookings
+from utils.booking_reminders import send_upcoming_booking_reminders
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -67,8 +68,16 @@ async def lifespan(app: FastAPI):
         name     = "Expire stale pending bookings",
         replace_existing=True,
     )
+    scheduler.add_job(
+        send_upcoming_booking_reminders,
+        trigger  = "interval",
+        minutes  = 15,
+        id       = "booking_reminders",
+        name     = "Send upcoming booking reminders",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("✅ APScheduler started (booking expiry every 5 min).")
+    logger.info("✅ APScheduler started (booking expiry every 5 min, reminders every 15 min).")
 
     yield
 
