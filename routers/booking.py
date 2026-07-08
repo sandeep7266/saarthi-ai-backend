@@ -127,6 +127,20 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # ── Customer profile fetch karo (naam already pata hai ya nahi) ────
         customer_profile = _get_or_create_customer_profile(client_id, from_number)
 
+        # ── Post-booking Start/Stop buttons ──────────────────────────────────
+        if interactive_id == "post_booking_start_new":
+            _send_whatsapp_text(phone_number_id, from_number,
+                "Bilkul! Batayein aapko kya book karna hai 😊")
+            return {"status": "ok"}
+
+        if interactive_id == "post_booking_stop":
+            _set_marketing_opt_out(client_id, from_number)
+            _send_whatsapp_text(phone_number_id, from_number,
+                "Theek hai, ab aapko promotional updates nahi milenge. 🙏 "
+                "Booking se judi zaroori jaankari (confirmation, reminders) milti rahegi. "
+                "Kabhi bhi phir se shuru karne ke liye 'Hi' bhej dein.")
+            return {"status": "ok"}
+
         # ── Conversation history ────────────────────────────────────────────
         conversation_history = _get_conversation_history(client_id, from_number)
 
@@ -235,13 +249,25 @@ def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict
         return doc.to_dict()
 
     profile = {
-        "phone"        : customer_phone,
-        "name"         : "",
-        "awaiting_name": False,
-        "created_at"   : datetime.now(timezone.utc),
+        "phone"           : customer_phone,
+        "name"            : "",
+        "awaiting_name"   : False,
+        "marketing_opt_in": False,  # explicit opt-in required before any marketing send
+        "created_at"      : datetime.now(timezone.utc),
     }
     ref.set(profile)
     return profile
+
+
+def _set_marketing_opt_out(client_id: str, customer_phone: str) -> None:
+    db = get_db()
+    ref = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection("customers")
+        .document(customer_phone)
+    )
+    ref.update({"marketing_opt_in": False, "marketing_opt_out_at": datetime.now(timezone.utc)})
 
 
 def _set_awaiting_name(client_id: str, customer_phone: str) -> None:
