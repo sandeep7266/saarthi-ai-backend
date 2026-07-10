@@ -34,9 +34,16 @@ from routers.notifications import router as notifications_router
 from routers.booking_session import router as booking_session_router
 from routers.dashboard_config import router as dashboard_config_router
 from routers.platform_admin import router as platform_admin_router
+from routers.stylist_availability import router as stylist_availability_router
 from utils.rate_limiter import limiter
 from utils.booking_expiry import expire_stale_pending_bookings
 from utils.booking_reminders import send_upcoming_booking_reminders
+from utils.staff_release import (
+    activate_bookings_starting_now,
+    send_pre_end_warnings,
+    check_and_release_staff,
+)
+from utils.slot_generator import daily_slot_rollforward
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -76,8 +83,44 @@ async def lifespan(app: FastAPI):
         name     = "Send upcoming booking reminders",
         replace_existing=True,
     )
+    scheduler.add_job(
+        daily_slot_rollforward,
+        trigger  = "cron",
+        hour     = 1,
+        minute   = 0,
+        id       = "slot_rollforward",
+        name     = "Auto-generate next day of recurring slots",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        activate_bookings_starting_now,
+        trigger  = "interval",
+        minutes  = 1,
+        id       = "activate_bookings",
+        name     = "Activate bookings whose start time arrived (mark stylist busy)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_pre_end_warnings,
+        trigger  = "interval",
+        minutes  = 1,
+        id       = "stylist_pre_end_warnings",
+        name     = "Send stylist 'Completed?' WhatsApp prompt ~5 min before service ends",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_and_release_staff,
+        trigger  = "interval",
+        minutes  = 1,
+        id       = "stylist_auto_release",
+        name     = "Hybrid auto-release stylist if no reply by estimated end time",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("✅ APScheduler started (booking expiry every 5 min, reminders every 15 min).")
+    logger.info(
+        "✅ APScheduler started (booking expiry 5min, reminders 15min, "
+        "slot rollforward daily 1AM, stylist activate/warn/release every 1min)."
+    )
 
     yield
 
@@ -246,6 +289,7 @@ app.include_router(notifications_router)
 app.include_router(booking_session_router)
 app.include_router(dashboard_config_router)
 app.include_router(platform_admin_router)
+app.include_router(stylist_availability_router)
 
 # ── Health endpoints ───────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])

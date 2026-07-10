@@ -55,10 +55,11 @@ def expire_stale_pending_bookings() -> dict:
             for booking_doc in stale_bookings:
                 booking_id   = booking_doc.id
                 booking_data = booking_doc.to_dict()
-                slot_id      = booking_data.get("slot_id")
+                slot_ids     = booking_data.get("slot_ids") or [booking_data.get("slot_id")]
+                slot_ids     = [sid for sid in slot_ids if sid]
 
                 try:
-                    # Atomic batch: expire booking + release slot
+                    # Atomic batch: expire booking + release all its slots
                     batch = db.batch()
 
                     booking_ref = (
@@ -73,7 +74,7 @@ def expire_stale_pending_bookings() -> dict:
                         "updated_at": now,
                     })
 
-                    if slot_id:
+                    for slot_id in slot_ids:
                         slot_ref = (
                             db.collection(Collections.CLIENTS)
                             .document(client_id)
@@ -93,8 +94,8 @@ def expire_stale_pending_bookings() -> dict:
                     batch.commit()
                     expired += 1
                     logger.info(
-                        "Expired booking %s | client=%s | slot=%s",
-                        booking_id, client_id, slot_id
+                        "Expired booking %s | client=%s | slots=%s",
+                        booking_id, client_id, slot_ids
                     )
 
                 except Exception as e:

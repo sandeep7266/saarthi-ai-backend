@@ -85,44 +85,17 @@
     color: var(--ink-soft); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
   }
   .cat-bar { width: 3px; height: 12px; background: var(--purple); border-radius: 2px; }
-
-  /* ── Service card — now a toggle (cart-style) ────────────────────────── */
   .service-card {
     width: 100%; text-align: left; cursor: pointer; display: flex; align-items: center;
-    gap: 12px; padding: 14px 16px; margin-bottom: 10px; border-radius: 14px;
-    border: 1.5px solid var(--border); background: var(--surface); transition: all 0.15s;
+    gap: 14px; padding: 14px 16px; margin-bottom: 10px; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--surface); transition: all 0.18s;
   }
-  .service-card.checked { border-color: var(--purple); background: var(--purple-bg); }
   .service-card:active { transform: scale(0.99); }
-  .service-checkbox {
-    width: 22px; height: 22px; border-radius: 7px; border: 1.5px solid var(--border);
-    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-    background: var(--surface); transition: all 0.15s;
-  }
-  .service-checkbox.checked { background: var(--purple); border-color: var(--purple); }
   .service-name { font-weight: 600; font-size: 15px; color: var(--ink); margin-bottom: 3px; }
   .service-meta { display: flex; gap: 12px; font-size: 12px; color: var(--ink-soft); align-items: center; }
   .service-meta-item { display: flex; align-items: center; gap: 3px; }
   .service-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .service-price { font-weight: 700; font-size: 16px; color: var(--ink); flex-shrink: 0; }
-
-  /* ── Cart sticky bar ──────────────────────────────────────────────────── */
-  .cart-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
-    background: var(--surface); border-top: 1px solid var(--border);
-    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 24px rgba(0,0,0,0.06);
-    display: flex; align-items: center; gap: 12px;
-  }
-  .cart-info { flex: 1; min-width: 0; }
-  .cart-count { font-size: 11.5px; color: var(--ink-soft); }
-  .cart-total { font-size: 17px; font-weight: 700; }
-  .cart-continue {
-    padding: 12px 22px; border-radius: 12px; border: none;
-    background: var(--purple); color: #fff; font-size: 14.5px; font-weight: 700;
-    cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  }
-  .cart-continue:active { background: var(--purple-dk); }
 
   .day-tabs { display: flex; gap: 8px; padding: 0 20px 16px; overflow-x: auto; scrollbar-width: none; }
   .day-tab {
@@ -148,22 +121,16 @@
     padding: 16px 20px 0;
   }
 
-  /* ── Selected services mini-summary (shown on slot step) ─────────────── */
-  .mini-cart {
-    margin: 0 20px 16px; padding: 10px 14px; border-radius: 10px;
-    background: var(--purple-bg); border: 1px solid var(--border); font-size: 12.5px; color: var(--purple-dk);
-  }
-
   .ticket {
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
     overflow: hidden; box-shadow: var(--shadow);
   }
   .ticket-top { padding: 18px 18px 14px; }
-  .ticket-line-item { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 14px; }
-  .ticket-line-item .li-name { color: var(--ink); }
-  .ticket-line-item .li-price { font-weight: 600; color: var(--ink); flex-shrink: 0; margin-left: 10px; }
-  .ticket-subtotal-row { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 14px; font-weight: 700; }
-  .ticket-detail-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); margin-top: 10px; }
+  .ticket-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .ticket-service-name { font-weight: 700; font-size: 16px; }
+  .ticket-duration { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .ticket-price { font-weight: 700; font-size: 18px; }
+  .ticket-detail-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); margin-bottom: 8px; }
   .ticket-divider { position: relative; height: 1px; background: var(--border); margin: 0 18px; }
   .ticket-notch { position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); }
   .ticket-bottom { padding: 14px 18px 18px; background: #FBF9FF; }
@@ -217,23 +184,6 @@
 
   .fatal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; text-align: center; }
   .fatal-msg { font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; text-align: center; }
-
-  .pending-banner {
-    margin: 14px 20px 0; padding: 12px 14px; border-radius: 12px;
-    background: #FFF7ED; border: 1px solid #FED7AA; font-size: 12.5px; color: #9A3412;
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  }
-  .pending-banner-text { line-height: 1.4; }
-  .pending-cancel-btn {
-    flex-shrink: 0; background: #fff; border: 1px solid #FDBA74; color: #9A3412;
-    font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px; cursor: pointer;
-  }
-  .pending-cancel-btn:disabled { opacity: 0.6; }
-  .step-cancel-link {
-    display: block; text-align: center; background: none; border: none;
-    font-size: 12.5px; font-weight: 600; color: var(--ink-soft); text-decoration: underline;
-    padding: 14px 20px 0; cursor: pointer; width: 100%;
-  }
 </style>
 </head>
 <body>
@@ -245,7 +195,7 @@
 
   var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? 'http://localhost:8000'
-    : 'https://saarthi-ai-backend-production-9063.up.railway.app';
+    : 'https://saarthi-ai-backend-production.up.railway.app';
 
   function getSessionToken() {
     var params = new URLSearchParams(window.location.search);
@@ -273,28 +223,16 @@
     loading: true,
     fatalError: null,
     session: null,
-    step: 0, // 0=services(cart) 1=slot 2=confirm 3=success
-    selectedServiceIds: [],   // cart — multiple service IDs
+    step: 0,
+    selectedService: null,
     selectedSlot: null,
     activeDay: null,
     payLoading: false,
     payError: '',
-    bookingId: '',
-    cancelLoading: false
+    bookingId: ''
   };
 
   var appEl = document.getElementById('app');
-
-  function getSelectedServices() {
-    var all = state.session.services || [];
-    return all.filter(function (s) { return state.selectedServiceIds.indexOf(s.service_id) !== -1; });
-  }
-  function cartTotal() {
-    return getSelectedServices().reduce(function (sum, s) { return sum + (s.price || 0); }, 0);
-  }
-  function cartDuration() {
-    return getSelectedServices().reduce(function (sum, s) { return sum + (s.duration_min || 0); }, 0);
-  }
 
   function render() {
     if (state.loading) { appEl.innerHTML = renderLoading(); return; }
@@ -302,7 +240,6 @@
     if (state.fatalError) { appEl.innerHTML = renderFatal('This link has expired', escapeHtml(state.fatalError) + ' Please send a message on WhatsApp to get a fresh booking link.'); return; }
 
     var html = renderHeader();
-    if (state.step < 3 && state.session && state.session.pending_booking_id) html += renderPendingBanner();
     if (state.step < 3) html += renderProgress();
 
     if (state.step === 0) html += renderServiceStep();
@@ -312,15 +249,6 @@
 
     appEl.innerHTML = html;
     attachHandlers();
-  }
-
-  function renderPendingBanner() {
-    return '<div class="pending-banner">' +
-      '<div class="pending-banner-text">You have an unpaid booking in progress from earlier.</div>' +
-      '<button class="pending-cancel-btn" data-action="cancel-pending" ' + (state.cancelLoading ? 'disabled' : '') + '>' +
-        (state.cancelLoading ? '…' : 'Cancel it') +
-      '</button>' +
-    '</div>';
   }
 
   function renderLoading() {
@@ -348,7 +276,7 @@
   }
 
   function renderProgress() {
-    var steps = ['Services', 'Time', 'Pay'];
+    var steps = ['Service', 'Time', 'Pay'];
     var html = '<div class="progress">';
     steps.forEach(function (label, i) {
       var cls = i < state.step ? 'done' : (i === state.step ? 'active' : '');
@@ -373,27 +301,22 @@
     return out;
   }
 
-  // ── Step 0: Service cart selection ─────────────────────────────────────
-
   function renderServiceStep() {
     var services = state.session.services || [];
     if (services.length === 0) {
       return '<div class="empty-state"><div class="empty-text">No services available right now. Please contact the business directly.</div></div>';
     }
     var grouped = groupBy(services, function (s) { return s.category || 'general'; });
-    var hasSelection = state.selectedServiceIds.length > 0;
 
-    var html = '<div style="padding:18px 20px ' + (hasSelection ? '90px' : '20px') + '">' +
-      '<div class="display section-title">Choose your services</div>' +
-      '<div class="section-sub">Tap to select one or more</div>';
+    var html = '<div style="padding:18px 20px 100px">' +
+      '<div class="display section-title">Choose a service</div>' +
+      '<div class="section-sub">Tap a service to continue</div>';
 
     Object.keys(grouped).forEach(function (cat) {
       html += '<div style="margin-bottom:18px">' +
         '<div class="cat-label"><div class="cat-bar"></div>' + escapeHtml(cat) + '</div>';
       grouped[cat].forEach(function (s) {
-        var checked = state.selectedServiceIds.indexOf(s.service_id) !== -1;
-        html += '<button class="service-card ' + (checked ? 'checked' : '') + '" data-action="toggle-service" data-id="' + escapeHtml(s.service_id) + '">' +
-          '<div class="service-checkbox ' + (checked ? 'checked' : '') + '">' + (checked ? icon('check', 13, '#fff') : '') + '</div>' +
+        html += '<button class="service-card" data-action="select-service" data-id="' + escapeHtml(s.service_id) + '">' +
           '<div style="flex:1;min-width:0">' +
             '<div class="service-name">' + escapeHtml(s.name) + '</div>' +
             '<div class="service-meta">' +
@@ -407,21 +330,8 @@
       html += '</div>';
     });
     html += '</div>';
-
-    if (hasSelection) {
-      var count = state.selectedServiceIds.length;
-      html += '<div class="cart-bar">' +
-        '<div class="cart-info">' +
-          '<div class="cart-count">' + count + ' service' + (count > 1 ? 's' : '') + ' selected</div>' +
-          '<div class="display cart-total">₹' + cartTotal() + '</div>' +
-        '</div>' +
-        '<button class="cart-continue" data-action="goto-slot">Continue ' + icon('arrow', 15, '#fff') + '</button>' +
-      '</div>';
-    }
     return html;
   }
-
-  // ── Step 1: Slot selection ───────────────────────────────────────────────
 
   function fmtDay(dateKey) {
     var d = new Date(dateKey);
@@ -440,12 +350,12 @@
 
   function renderSlotStep() {
     var slots = state.session.slots || [];
-    var selectedServices = getSelectedServices();
+    var svc = state.selectedService;
 
     if (slots.length === 0) {
       return '<div class="empty-state">' +
         '<div class="empty-text">No slots available in the next 2 weeks.</div>' +
-        '<button class="btn-ghost" data-action="back-to-service">← Change services</button>' +
+        '<button class="btn-ghost" data-action="back-to-service">← Choose a different service</button>' +
       '</div>';
     }
 
@@ -453,14 +363,11 @@
     var dayKeys = Object.keys(grouped);
     if (!state.activeDay || !grouped[state.activeDay]) state.activeDay = dayKeys[0];
 
-    var serviceNames = selectedServices.map(function (s) { return s.name; }).join(', ');
-
     var html = '<div style="padding:18px 0 100px">' +
       '<div style="padding:0 20px">' +
         '<div class="display section-title">Pick a time</div>' +
-        '<div class="section-sub">' + cartDuration() + ' min total</div>' +
+        '<div class="section-sub">' + escapeHtml(svc.name) + ' · ' + svc.duration_min + ' min</div>' +
       '</div>' +
-      '<div class="mini-cart">' + escapeHtml(serviceNames) + ' · <b>₹' + cartTotal() + '</b></div>' +
       '<div class="day-tabs">';
 
     dayKeys.forEach(function (key) {
@@ -477,35 +384,28 @@
     });
 
     html += '</div>' +
-      '<button class="back-link" data-action="back-to-service">← Change services</button>' +
+      '<button class="back-link" data-action="back-to-service">← Change service</button>' +
     '</div>';
     return html;
   }
 
-  // ── Step 2: Confirm + Pay (multi-service ticket) ───────────────────────
-
   function renderConfirmStep() {
-    var services = getSelectedServices();
+    var svc = state.selectedService;
     var slot = state.selectedSlot;
     var cust = state.session.customer_name;
-    var total = cartTotal();
-    var deposit = Math.max(Math.round(total * 0.25), 1);
-    var balance = total - deposit;
-
-    var lineItemsHtml = services.map(function (s) {
-      return '<div class="ticket-line-item">' +
-        '<span class="li-name">' + escapeHtml(s.name) + '</span>' +
-        '<span class="li-price">₹' + s.price + '</span>' +
-      '</div>';
-    }).join('');
+    var deposit = Math.max(Math.round(svc.price * 0.25), 1);
+    var balance = svc.price - deposit;
 
     var html = '<div style="padding:18px 20px 120px">' +
       '<div class="display section-title">Confirm &amp; pay</div>' +
       '<div class="section-sub">Pay 25% now to secure your slot</div>' +
       '<div class="ticket">' +
         '<div class="ticket-top">' +
-          lineItemsHtml +
-          '<div class="ticket-subtotal-row"><span>Total</span><span class="display">₹' + total + '</span></div>' +
+          '<div class="ticket-head">' +
+            '<div><div class="ticket-service-name">' + escapeHtml(svc.name) + '</div>' +
+            '<div class="ticket-duration">' + svc.duration_min + ' minutes</div></div>' +
+            '<div class="ticket-price display">₹' + svc.price + '</div>' +
+          '</div>' +
           '<div class="ticket-detail-row">' + icon('calendar', 14, 'var(--purple)') + ' ' + fmtDateTime(slot.slot_datetime) + '</div>' +
           '<div class="ticket-detail-row">' + icon('person', 14, 'var(--purple)') + ' with ' + escapeHtml(slot.staff_name) + '</div>' +
           (cust ? '<div class="ticket-detail-row">' + icon('check', 14, 'var(--purple)') + ' booked for ' + escapeHtml(cust) + '</div>' : '') +
@@ -518,29 +418,26 @@
       '</div>' +
       (state.payError ? '<div class="error-box">' + escapeHtml(state.payError) + '</div>' : '') +
       '<div class="fine-print">Secure payment via Razorpay. Your slot is held for 15 minutes.</div>' +
-      '<button class="step-cancel-link" data-action="cancel-selection">Cancel booking</button>' +
     '</div>';
     return html;
   }
 
   function renderActionBar() {
-    var deposit = Math.max(Math.round(cartTotal() * 0.25), 1);
+    var svc = state.selectedService;
+    var deposit = Math.max(Math.round(svc.price * 0.25), 1);
     var content = state.payLoading
       ? '<span class="spinner-sm"></span>'
       : 'Pay ₹' + deposit + ' &amp; confirm ' + icon('arrow', 16, '#fff');
     return '<div class="action-bar"><button class="btn-primary" data-action="pay" ' + (state.payLoading ? 'disabled' : '') + '>' + content + '</button></div>';
   }
 
-  // ── Step 3: Success ──────────────────────────────────────────────────────
-
   function renderSuccessStep() {
-    var services = getSelectedServices();
+    var svc = state.selectedService;
     var slot = state.selectedSlot;
-    var serviceNames = services.map(function (s) { return s.name; }).join(', ');
     return '<div class="success-wrap">' +
       '<div class="success-icon">' + icon('check', 36, 'var(--green)') + '</div>' +
       '<div class="display success-title">Booking confirmed!</div>' +
-      '<div class="success-sub">' + escapeHtml(serviceNames) + '<br>with ' + escapeHtml(slot.staff_name) + ' · ' + fmtDateTime(slot.slot_datetime) + '</div>' +
+      '<div class="success-sub">' + escapeHtml(svc.name) + ' with ' + escapeHtml(slot.staff_name) + '<br>' + fmtDateTime(slot.slot_datetime) + '</div>' +
       '<div class="booking-id-box">' +
         '<div class="booking-id-label">Booking ID</div>' +
         '<div class="display booking-id-value">' + escapeHtml(state.bookingId) + '</div>' +
@@ -549,24 +446,15 @@
     '</div>';
   }
 
-  // ── Event handlers ────────────────────────────────────────────────────────
-
   function attachHandlers() {
-    appEl.querySelectorAll('[data-action="toggle-service"]').forEach(function (el) {
+    appEl.querySelectorAll('[data-action="select-service"]').forEach(function (el) {
       el.addEventListener('click', function () {
         var id = el.getAttribute('data-id');
-        var idx = state.selectedServiceIds.indexOf(id);
-        if (idx === -1) state.selectedServiceIds.push(id);
-        else state.selectedServiceIds.splice(idx, 1);
+        state.selectedService = state.session.services.find(function (s) { return s.service_id === id; });
+        state.step = 1;
+        state.activeDay = null;
         render();
       });
-    });
-
-    var continueBtn = appEl.querySelector('[data-action="goto-slot"]');
-    if (continueBtn) continueBtn.addEventListener('click', function () {
-      state.step = 1;
-      state.activeDay = null;
-      render();
     });
 
     appEl.querySelectorAll('[data-action="select-day"]').forEach(function (el) {
@@ -594,41 +482,6 @@
 
     var payBtn = appEl.querySelector('[data-action="pay"]');
     if (payBtn) payBtn.addEventListener('click', handlePay);
-
-    var cancelSelectionBtn = appEl.querySelector('[data-action="cancel-selection"]');
-    if (cancelSelectionBtn) cancelSelectionBtn.addEventListener('click', function () {
-      state.step = 0;
-      state.selectedServiceIds = [];
-      state.selectedSlot = null;
-      state.payError = '';
-      render();
-    });
-
-    var cancelPendingBtn = appEl.querySelector('[data-action="cancel-pending"]');
-    if (cancelPendingBtn) cancelPendingBtn.addEventListener('click', handleCancelPending);
-  }
-
-  function handleCancelPending() {
-    state.cancelLoading = true;
-    render();
-
-    var sessionToken = getSessionToken();
-    fetch(API_BASE + '/api/v1/booking-session/' + sessionToken + '/cancel', { method: 'PATCH' })
-      .then(function (resp) {
-        return resp.json().then(function (data) {
-          if (!resp.ok) throw new Error(data.detail || 'Could not cancel booking.');
-          return data;
-        });
-      })
-      .then(function () {
-        state.cancelLoading = false;
-        boot(); // re-fetch session so the freed slot shows up as available again
-      })
-      .catch(function (err) {
-        state.cancelLoading = false;
-        render();
-        alert(err.message);
-      });
   }
 
   function handlePay() {
@@ -641,7 +494,7 @@
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        service_ids: state.selectedServiceIds,
+        service_id: state.selectedService.service_id,
         slot_id: state.selectedSlot.slot_id
       })
     })
@@ -679,12 +532,6 @@
       render();
       return;
     }
-
-    state.loading = true;
-    state.step = 0;
-    state.selectedServiceIds = [];
-    state.selectedSlot = null;
-    render();
 
     fetch(API_BASE + '/api/v1/booking-session/' + sessionToken)
       .then(function (resp) {

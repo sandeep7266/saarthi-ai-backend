@@ -71,3 +71,4 @@ class Collections:
     INVOICES   = "invoices"
     AUDIT_LOGS = "audit_logs"
     PLATFORM_ADMINS = "platform_admins"  # Saarthi-AI's own team — separate from tenant users
+    STYLISTS   = "stylists"  # real-time staff status (available/busy) — separate from the login "staff" role

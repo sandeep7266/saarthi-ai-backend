@@ -391,18 +391,14 @@ async def _handle_b2c_booking_payment(entity: dict) -> None:
         logger.info("B2C webhook: booking %s already confirmed.", booking_id)
         return
 
-    # Confirm the slot
-    slot_id  = booking_data.get("slot_id")
-    slot_ref = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection(Collections.SLOTS)
-        .document(slot_id)
-    )
+    # Confirm the slot(s) — slot_ids covers multi-service bookings that span
+    # more than one grid slot; falls back to just slot_id for old bookings.
+    slot_ids = booking_data.get("slot_ids") or [booking_data.get("slot_id")]
+    slot_ids = [sid for sid in slot_ids if sid]
 
     now = datetime.now(timezone.utc)
 
-    # Atomic batch update: booking + slot
+    # Atomic batch update: booking + all its slots
     batch = db.batch()
     batch.update(booking_ref, {
         "status"      : "confirmed",
@@ -410,14 +406,21 @@ async def _handle_b2c_booking_payment(entity: dict) -> None:
         "updated_at"  : now,
         "payment_id"  : payment.get("id", ""),
     })
-    batch.update(slot_ref, {
-        "status"    : "booked",
-        "booking_id": booking_id,
-        "updated_at": now,
-    })
+    for sid in slot_ids:
+        slot_ref = (
+            db.collection(Collections.CLIENTS)
+            .document(client_id)
+            .collection(Collections.SLOTS)
+            .document(sid)
+        )
+        batch.update(slot_ref, {
+            "status"    : "booked",
+            "booking_id": booking_id,
+            "updated_at": now,
+        })
     batch.commit()
 
-    logger.info("Booking CONFIRMED: %s | client=%s", booking_id, client_id)
+    logger.info("Booking CONFIRMED: %s | client=%s | slots=%d", booking_id, client_id, len(slot_ids))
 
     # Mark booking session completed (agar Web App se aaya tha)
     try:

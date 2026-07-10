@@ -13,15 +13,14 @@ ab AI sirf conversational layer hai, asli booking web app mein hoti hai.
 
 import os
 import logging
-import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
+
 from database import get_db, Collections
 
 logger = logging.getLogger(__name__)
@@ -56,8 +55,7 @@ async def whatsapp_verify(
 # ── Main Incoming Message Handler (POST) ──────────────────────────────────────
 
 @router.post("/whatsapp")
-#async def whatsapp_incoming(request: Request, @router.post("/whatsapp")
-async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks):
+async def whatsapp_incoming(request: Request):
     """
     Ingestion gateway for Meta WhatsApp Cloud API messages.
     NEW FLOW: Naam collect karke Web Booking App link bhejta hai.
@@ -109,11 +107,11 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # ── Multi-Tenant Isolation ──────────────────────────────────────────
         client_data, client_id = _resolve_tenant(phone_number_id)
         if not client_data:
+            # No active client owns this phone_number_id — this is either a
+            # brand-new prospective client, or a message on the company's own
+            # onboarding number. Hand off to the Master Onboarding Bot.
             from routers.master_onboarding import handle_onboarding_message
-            
-            # Ye task ab background mein chalega, aur server turant reply dega
-            background_tasks.add_task(
-                handle_onboarding_message,
+            await handle_onboarding_message(
                 phone_number_id=phone_number_id,
                 from_number=from_number,
                 msg_body=msg_body,
@@ -122,68 +120,12 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
                 media_type=media_type,
             )
             return {"status": "ok"}
+
         if client_data.get("status") != "active":
             return {"status": "ok"}
 
         # ── Customer profile fetch karo (naam already pata hai ya nahi) ────
         customer_profile = _get_or_create_customer_profile(client_id, from_number)
-
-        # ── Post-booking Start/Stop buttons ──────────────────────────────────
-        if interactive_id == "post_booking_start_new":
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Bilkul! Batayein aapko kya book karna hai 😊")
-            return {"status": "ok"}
-
-        if interactive_id == "post_booking_stop":
-            _set_marketing_opt_out(client_id, from_number)
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Theek hai, ab aapko promotional updates nahi milenge. 🙏 "
-                "Booking se judi zaroori jaankari (confirmation, reminders) milti rahegi. "
-                "Kabhi bhi phir se shuru karne ke liye 'Hi' bhej dein.")
-            return {"status": "ok"}
-
-        # ── Reschedule: slot selection (customer already saw the list) ─────────
-        pending_reschedule_id = customer_profile.get("pending_reschedule_booking_id", "")
-        if pending_reschedule_id and interactive_id:
-            if interactive_id == "reschedule_cancel_pick":
-                _clear_pending_reschedule(client_id, from_number)
-                _send_whatsapp_text(phone_number_id, from_number, "Theek hai, booking wahi rahegi. 🙏")
-                return {"status": "ok"}
-
-            result = await _reschedule_booking(client_id, pending_reschedule_id, interactive_id)
-            _clear_pending_reschedule(client_id, from_number)
-            if result.get("success"):
-                _send_whatsapp_text(
-                    phone_number_id, from_number,
-                    f"✅ Booking reschedule ho gayi!\n\n"
-                    f"🗓 Naya time: {result['new_time_label']}\n\n"
-                    f"Milte hain! 🙏"
-                )
-            else:
-                _send_whatsapp_text(
-                    phone_number_id, from_number,
-                    "Ye slot ab available nahi hai. Reschedule karne ke liye phir se 'reschedule' likhein 🙏"
-                )
-            return {"status": "ok"}
-
-        # ── Reschedule: trigger — find their upcoming booking, show new slots ──
-        reschedule_keywords = {"reschedule", "reschedule karo", "time change", "date change", "badlo"}
-        if msg_body.strip().lower() in reschedule_keywords:
-            booking = _find_upcoming_confirmed_booking(client_id, from_number)
-            if not booking:
-                _send_whatsapp_text(phone_number_id, from_number,
-                    "Aapki koi active upcoming booking nahi mili. Nayi booking ke liye kuch bhi message karein 😊")
-                return {"status": "ok"}
-
-            slots = _list_available_slots_for_reschedule(client_id)
-            if not slots:
-                _send_whatsapp_text(phone_number_id, from_number,
-                    "Abhi koi naya slot available nahi hai agle 2 hafton mein. Thodi der mein try karein 🙏")
-                return {"status": "ok"}
-
-            _set_pending_reschedule(client_id, from_number, booking["booking_id"])
-            _send_reschedule_slot_list(phone_number_id, from_number, slots)
-            return {"status": "ok"}
 
         # ── Conversation history ────────────────────────────────────────────
         conversation_history = _get_conversation_history(client_id, from_number)
@@ -193,17 +135,6 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         # activate kiya gaya ho (Razorpay webhook se nahi guzra).
         bot_profile = dict(client_data.get("gemini_bot_profile", {}))
         bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
-
-        # ── Cancel — works while waiting for name (only WhatsApp-side state) ────
-        # Once the customer moves to book.html, abandoning there is already
-        # handled by the 15-min stale-booking auto-expiry (utils/booking_expiry.py).
-        cancel_keywords = {"cancel", "cancel karo", "band karo", "ruk jao", "stop",
-                           "roko", "nahi karna", "chodo", "chhod do", "exit", "quit"}
-        if msg_body.strip().lower() in cancel_keywords and _is_awaiting_name(client_id, from_number):
-            _clear_awaiting_name(client_id, from_number)
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Theek hai, booking cancel kar diya. 🙏 Jab bhi chahein, dobara message kar dein.")
-            return {"status": "ok"}
 
         # ── Gemini se sirf conversational reply + intent lo ────────────────
         ai_response = await _invoke_gemini(
@@ -257,8 +188,6 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
 
     except (KeyError, IndexError) as e:
         logger.debug("Webhook payload parse skip (likely non-message event): %s", e)
-    except Exception as e:
-        logger.error("Unhandled error in whatsapp_incoming: %s", e, exc_info=True)
 
     return {"status": "ok"}
 
@@ -295,193 +224,13 @@ def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict
         return doc.to_dict()
 
     profile = {
-        "phone"           : customer_phone,
-        "name"            : "",
-        "awaiting_name"   : False,
-        "marketing_opt_in": False,  # explicit opt-in required before any marketing send
-        "pending_reschedule_booking_id": "",
-        "created_at"      : datetime.now(timezone.utc),
+        "phone"        : customer_phone,
+        "name"         : "",
+        "awaiting_name": False,
+        "created_at"   : datetime.now(timezone.utc),
     }
     ref.set(profile)
     return profile
-
-
-def _set_marketing_opt_out(client_id: str, customer_phone: str) -> None:
-    db = get_db()
-    ref = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection("customers")
-        .document(customer_phone)
-    )
-    ref.update({"marketing_opt_in": False, "marketing_opt_out_at": datetime.now(timezone.utc)})
-
-
-def _set_pending_reschedule(client_id: str, customer_phone: str, booking_id: str) -> None:
-    db = get_db()
-    ref = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection("customers")
-        .document(customer_phone)
-    )
-    ref.update({"pending_reschedule_booking_id": booking_id})
-
-
-def _clear_pending_reschedule(client_id: str, customer_phone: str) -> None:
-    db = get_db()
-    ref = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection("customers")
-        .document(customer_phone)
-    )
-    ref.update({"pending_reschedule_booking_id": ""})
-
-
-def _find_upcoming_confirmed_booking(client_id: str, customer_phone: str) -> dict | None:
-    db = get_db()
-    now = datetime.now(timezone.utc)
-    docs = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection(Collections.BOOKINGS)
-        .where("customer_phone", "==", customer_phone)
-        .where("status", "==", "confirmed")
-        .where("slot_datetime", ">", now)
-        .order_by("slot_datetime")
-        .limit(1)
-        .get()
-    )
-    for doc in docs:
-        data = doc.to_dict()
-        data["booking_id"] = doc.id
-        return data
-    return None
-
-
-def _list_available_slots_for_reschedule(client_id: str) -> list[dict]:
-    db = get_db()
-    now = datetime.now(timezone.utc)
-    slot_end = now + timedelta(days=14)
-    docs = (
-        db.collection(Collections.CLIENTS)
-        .document(client_id)
-        .collection(Collections.SLOTS)
-        .where("status", "==", "available")
-        .where("slot_datetime", ">=", now)
-        .where("slot_datetime", "<=", slot_end)
-        .order_by("slot_datetime")
-        .limit(10)  # WhatsApp list messages support max 10 rows
-        .get()
-    )
-    slots = []
-    for doc in docs:
-        data = doc.to_dict()
-        dt = data.get("slot_datetime")
-        label = dt.strftime("%a %d %b, %I:%M %p") if hasattr(dt, "strftime") else str(dt)
-        staff = data.get("staff_name", "")
-        slots.append({
-            "slot_id": doc.id,
-            "label"  : label + (f" — {staff}" if staff else ""),
-        })
-    return slots
-
-
-def _send_reschedule_slot_list(phone_number_id: str, to: str, slots: list[dict]) -> None:
-    url = f"https://graph.facebook.com/{os.getenv('META_API_VERSION', 'v19.0')}/{phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "to"  : to,
-        "type": "interactive",
-        "interactive": {
-            "type": "list",
-            "header": {"type": "text", "text": "Naya Time Chunein"},
-            "body": {"text": "Neeche diye slots mein se ek chunein:"},
-            "action": {
-                "button": "Choose Slot",
-                "sections": [{
-                    "title": "Available Slots",
-                    "rows": [
-                        {"id": s["slot_id"], "title": s["label"][:24]}
-                        for s in slots
-                    ] + [{"id": "reschedule_cancel_pick", "title": "❌ Rehne dein, cancel karein"}],
-                }],
-            },
-        },
-    }
-    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
-    try:
-        resp = httpx.post(url, json=payload, headers=headers, timeout=10)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.error("Reschedule list send failed for %s: %s", to, e)
-
-
-async def _reschedule_booking(client_id: str, booking_id: str, new_slot_id: str) -> dict:
-    """
-    Transactionally: releases the booking's current slot, locks the new one,
-    and updates the booking's slot reference. Returns {"success": bool, ...}.
-    """
-    db = get_db()
-    now = datetime.now(timezone.utc)
-
-    booking_ref = (
-        db.collection(Collections.CLIENTS).document(client_id)
-        .collection(Collections.BOOKINGS).document(booking_id)
-    )
-    new_slot_ref = (
-        db.collection(Collections.CLIENTS).document(client_id)
-        .collection(Collections.SLOTS).document(new_slot_id)
-    )
-
-    booking_doc = booking_ref.get()
-    if not booking_doc.exists:
-        return {"success": False, "reason": "booking_not_found"}
-    booking_data = booking_doc.to_dict()
-    old_slot_id = booking_data.get("slot_id", "")
-
-    from firebase_admin import firestore as _firestore
-
-    @_firestore.transactional
-    def swap_txn(transaction):
-        new_slot_doc = new_slot_ref.get(transaction=transaction)
-        if not new_slot_doc.exists or new_slot_doc.to_dict().get("status") != "available":
-            raise ValueError("New slot no longer available")
-
-        new_slot_data = new_slot_doc.to_dict()
-
-        # Release old slot (best-effort — don't fail the reschedule if the old
-        # slot doc is missing/already recycled)
-        if old_slot_id:
-            old_slot_ref = (
-                db.collection(Collections.CLIENTS).document(client_id)
-                .collection(Collections.SLOTS).document(old_slot_id)
-            )
-            old_slot_doc = old_slot_ref.get(transaction=transaction)
-            if old_slot_doc.exists:
-                transaction.update(old_slot_ref, {"status": "available", "booking_id": None, "locked_at": None})
-
-        transaction.update(new_slot_ref, {"status": "booked", "booking_id": booking_id, "locked_at": now})
-        transaction.update(booking_ref, {
-            "slot_id"       : new_slot_id,
-            "slot_datetime" : new_slot_data.get("slot_datetime"),
-            "staff_name"    : new_slot_data.get("staff_name", ""),
-            "reminder_sent" : False,  # new time — allow a fresh reminder
-            "updated_at"    : now,
-        })
-        return new_slot_data.get("slot_datetime")
-
-    try:
-        new_dt = swap_txn(db.transaction())
-    except ValueError:
-        return {"success": False, "reason": "slot_taken"}
-    except Exception as e:
-        logger.error("Reschedule transaction failed: %s", e)
-        return {"success": False, "reason": "error"}
-
-    time_label = new_dt.strftime("%a %d %b, %I:%M %p") if hasattr(new_dt, "strftime") else str(new_dt)
-    return {"success": True, "new_time_label": time_label}
 
 
 def _set_awaiting_name(client_id: str, customer_phone: str) -> None:
@@ -669,9 +418,8 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.2,
-                    "max_tokens" : 1024,
-                    "reasoning_effort": "none",  # Qwen3.6 thinks by default, wrapping output in <think> tags
+                    "temperature": 0.5,
+                    "max_tokens" : 200,
                 },
             )
             resp.raise_for_status()
@@ -683,9 +431,6 @@ Never invent prices or specific slot times — those are handled separately."""
             "reply_text": "Maafi chahti hoon, abhi thodi technical dikkat aa rahi hai. Thodi der mein try karein. 🙏",
             "intent"    : "error",
         }
-
-    # Safety net in case reasoning_effort isn't fully respected by this model version
-    raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
 
     intent = "conversation"
     reply_text = raw_text
@@ -738,18 +483,11 @@ async def _initiate_booking(
         .document(slot_id)
     )
 
-    from firebase_admin import firestore as _firestore
-
-    @_firestore.transactional
+    @db.transactional
     def lock_slot_txn(transaction):
         slot_doc = slot_ref.get(transaction=transaction)
-        actual_status = slot_doc.to_dict().get("status") if slot_doc.exists else "<<DOC DOES NOT EXIST>>"
-        logger.info(
-            "Slot lock check | client=%s | slot_id=%s | exists=%s | actual_status=%r",
-            client_id, slot_id, slot_doc.exists, actual_status,
-        )
-        if not slot_doc.exists or actual_status != "available":
-            raise ValueError(f"Slot no longer available (status={actual_status!r})")
+        if not slot_doc.exists or slot_doc.to_dict().get("status") != "available":
+            raise ValueError("Slot no longer available")
         transaction.update(slot_ref, {"status": "pending_payment", "locked_at": now})
 
     try:
@@ -776,7 +514,6 @@ async def _initiate_booking(
         "service_price" : total_price,           # backward-compat (PDF invoice, analytics)
         "deposit_amount": deposit_amount,
         "status"        : "pending_payment",
-        "reminder_sent" : False,
         "created_at"    : now,
         "updated_at"    : now,
     }
@@ -810,7 +547,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 1800),
+            "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",

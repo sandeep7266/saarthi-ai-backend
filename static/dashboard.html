@@ -180,6 +180,18 @@
 
   .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 100px; font-size: 11px; font-weight: 600; }
   .badge.active { background: rgba(16,185,129,0.12); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .stylist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .stylist-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .stylist-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .stylist-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--purple); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+  .stylist-name { font-weight: 700; font-size: 14px; }
+  .stylist-phone { font-size: 12px; color: var(--text-mute); }
+  .stylist-status-row { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.free { background: var(--green); }
+  .dot.busy { background: #F59E0B; animation: pulseDot 1.6s ease-in-out infinite; }
+  @keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   .badge.inactive { background: rgba(107,114,128,0.12); color: var(--text-mute); border: 1px solid rgba(107,114,128,0.3); }
   .badge.admin { background: rgba(245,158,11,0.12); color: var(--gold); border: 1px solid rgba(245,158,11,0.3); }
   .badge.staff { background: rgba(124,58,237,0.12); color: var(--purple-lt); border: 1px solid rgba(124,58,237,0.3); }
@@ -246,8 +258,8 @@
     services: [],
     slots: [],
     slotsDate: null,
-    scheduleTemplate: null,
     staff: [],
+    stylists: [],
     staffDetail: null,
     staffDetailPeriod: 'week',
 
@@ -564,6 +576,7 @@
       { id: 'home',     icon: '📊', label: 'Dashboard' },
       { id: 'services', icon: '🧾', label: cfg.service_label || 'Services' },
       { id: 'slots',    icon: cfg.slot_screen_type === 'table_grid' ? '🍽️' : '🗓️', label: cfg.slot_label || 'Slots' },
+      { id: 'stylists', icon: '🟢', label: 'Stylists' },
       { id: 'staff',    icon: '👥', label: cfg.staff_label || 'Staff' },
       { id: 'settings', icon: '⚙️', label: 'Settings' },
     ];
@@ -583,9 +596,9 @@
     else if (page === 'slots') {
       if (!state.slotsDate) state.slotsDate = todayIso();
       loadSlots();
-      loadScheduleTemplate();
     }
     else if (page === 'staff') loadStaff();
+    else if (page === 'stylists') loadStylists();
   }
 
   function renderShell() {
@@ -668,6 +681,7 @@
     if (state.page === 'home') return renderHomePage();
     if (state.page === 'services') return renderServicesPage();
     if (state.page === 'slots') return renderSlotsPage();
+    if (state.page === 'stylists') return renderStylistsPage();
     if (state.page === 'staff') return renderStaffPage();
     if (state.page === 'staffDetail') return renderStaffDetailPage();
     if (state.page === 'settings') return renderSettingsPage();
@@ -678,6 +692,7 @@
     if (state.page === 'home') attachHomeHandlers();
     else if (state.page === 'services') attachServicesHandlers();
     else if (state.page === 'slots') attachSlotsHandlers();
+    else if (state.page === 'stylists') attachStylistsHandlers();
     else if (state.page === 'staff') attachStaffHandlers();
     else if (state.page === 'staffDetail') attachStaffDetailHandlers();
     else if (state.page === 'settings') attachSettingsHandlers();
@@ -986,42 +1001,13 @@
       .catch(function (err) { showToast(err.message, 'error'); });
   }
 
-  function loadScheduleTemplate() {
-    apiFetch('/api/v1/schedule-template?client_id=' + state.claims.client_id)
-      .then(function (data) { state.scheduleTemplate = data.schedule_template; if (state.page === 'slots') refreshPageBodyOnly(); })
-      .catch(function () { /* non-critical — banner just shows OFF state */ });
-  }
-
   function renderSlotsPage() {
     var cfg = (state.dashboardConfig || {}).config || {};
     var isAdmin = state.claims.role === 'admin';
     var isTableMode = cfg.slot_screen_type === 'table_grid';
     var label = cfg.slot_label || 'Slots';
 
-    var html = '';
-
-    if (isAdmin) {
-      var st = state.scheduleTemplate;
-      var isAutoOn = st && st.enabled;
-      html += '<div class="card" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">' +
-        '<div>' +
-          '<div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px">' +
-            (isAutoOn ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>' : '') +
-            'Auto Schedule ' + (isAutoOn ? '— ON' : '— OFF') +
-          '</div>' +
-          '<div class="section-sub" style="margin-top:2px">' +
-            (isAutoOn
-              ? 'Slots automatically refill every day — no manual work needed.'
-              : 'Set your weekly hours once, and slots will never run out again.') +
-          '</div>' +
-        '</div>' +
-        '<button class="btn-secondary" id="auto-schedule-btn" style="width:auto;padding:9px 16px">' +
-          (isAutoOn ? 'Edit Schedule' : '⚙️ Set Up Auto Schedule') +
-        '</button>' +
-      '</div>';
-    }
-
-    html += '<div class="section-head">' +
+    var html = '<div class="section-head">' +
       '<div><div class="section-title">' + escapeHtml(label) + '</div>' +
       '<div class="section-sub">' + (isTableMode ? 'Manage table availability by time' : 'Manage ' + escapeHtml((cfg.staff_label || 'staff').toLowerCase()) + ' availability') + '</div></div>' +
       '<div style="display:flex;gap:10px;align-items:center">' +
@@ -1074,9 +1060,6 @@
     var addBtn = document.getElementById('add-slots-btn') || document.getElementById('add-slots-empty-btn');
     if (addBtn) addBtn.addEventListener('click', openSlotsModal);
 
-    var autoBtn = document.getElementById('auto-schedule-btn');
-    if (autoBtn) autoBtn.addEventListener('click', openAutoScheduleModal);
-
     document.querySelectorAll('[data-delete-slot]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var id = btn.getAttribute('data-delete-slot');
@@ -1093,23 +1076,6 @@
     state.modal = {
       type: 'slots',
       isTableMode: cfg.slot_screen_type === 'table_grid',
-      error: '', saving: false,
-    };
-    render();
-  }
-
-  function openAutoScheduleModal() {
-    var existing = state.scheduleTemplate || {};
-    var cfg = (state.dashboardConfig || {}).config || {};
-    state.modal = {
-      type: 'autoSchedule',
-      isTableMode: cfg.slot_screen_type === 'table_grid',
-      enabled: existing.enabled !== false,
-      open_time: existing.open_time || '10:00',
-      close_time: existing.close_time || '18:00',
-      slot_duration_min: existing.slot_duration_min || 30,
-      open_days: existing.open_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
-      staff: (existing.staff || []).join(', '),
       error: '', saving: false,
     };
     render();
@@ -1153,50 +1119,84 @@
     });
   }
 
-  function submitAutoScheduleModal() {
-    var m = state.modal;
-    var openTime = document.getElementById('auto-open-time').value;
-    var closeTime = document.getElementById('auto-close-time').value;
-    var duration = parseInt(document.getElementById('auto-duration').value, 10) || 30;
-    var staffRaw = document.getElementById('auto-staff').value.trim();
-    var enabled = document.getElementById('auto-enabled').checked;
-    var days = [];
-    document.querySelectorAll('.auto-day-check:checked').forEach(function (cb) { days.push(cb.value); });
-
-    if (!openTime || !closeTime) { m.error = 'Open and close time are required.'; render(); return; }
-    if (days.length === 0) { m.error = 'Select at least one open day.'; render(); return; }
-
-    var staff = staffRaw ? staffRaw.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
-
-    m.saving = true; m.error = '';
-    render();
-
-    apiFetch('/api/v1/schedule-template?client_id=' + state.claims.client_id, {
-      method: 'PUT',
-      body: JSON.stringify({
-        enabled: enabled,
-        open_time: openTime,
-        close_time: closeTime,
-        slot_duration_min: duration,
-        open_days: days,
-        staff: staff,
-      }),
-    }).then(function (data) {
-      state.scheduleTemplate = data.schedule_template;
-      state.modal = null;
-      showToast(enabled ? (data.slots_created + ' slots auto-created. Never runs out now!') : 'Auto schedule turned off.', 'success');
-      render();
-      loadSlots();
-    }).catch(function (err) {
-      m.saving = false; m.error = err.message;
-      render();
-    });
-  }
-
   function loadStaff() {
     apiFetch('/api/v1/auth/staff?client_id=' + state.claims.client_id)
       .then(function (data) { state.staff = data.staff || []; if (state.page === 'staff') refreshPageBodyOnly(); })
       .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function loadStylists() {
+    apiFetch('/api/v1/stylists?client_id=' + state.claims.client_id)
+      .then(function (data) { state.stylists = data.stylists || []; if (state.page === 'stylists') refreshPageBodyOnly(); })
+      .catch(function (err) { showToast(err.message, 'error'); });
+  }
+
+  function renderStylistsPage() {
+    var isAdmin = state.claims.role === 'admin';
+
+    var html = '<div class="section-head">' +
+      '<div><div class="section-title">Stylists</div>' +
+      '<div class="section-sub">Live status — auto-updates as bookings start and finish</div></div>' +
+      (isAdmin ? '<button class="btn-primary" style="width:auto;padding:10px 18px" id="add-stylist-btn">+ Add Stylist</button>' : '') +
+    '</div>';
+
+    if (state.stylists.length === 0) {
+      html += '<div class="card"><div class="empty-block">No stylists added yet. Register your stylists here so ' +
+        'the system can track who\'s free, who\'s busy, and for how long.' +
+        (isAdmin ? '<br><br><button class="btn-secondary" id="add-stylist-empty-btn">+ Add your first stylist</button>' : '') +
+      '</div></div>';
+      return html;
+    }
+
+    html += '<div class="stylist-grid">';
+    state.stylists.forEach(function (s) {
+      var busy = s.status === 'busy';
+      html += '<div class="stylist-card">' +
+        '<div class="stylist-card-top">' +
+          '<div class="stylist-avatar">' + escapeHtml((s.name || '?').charAt(0).toUpperCase()) + '</div>' +
+          '<div><div class="stylist-name">' + escapeHtml(s.name || '—') + '</div>' +
+            '<div class="stylist-phone">' + escapeHtml(s.phone || 'No phone set') + '</div></div>' +
+        '</div>' +
+        '<div class="stylist-status-row">' +
+          '<span class="dot ' + (busy ? 'busy' : 'free') + '"></span>' +
+          '<span>' + (busy ? 'Busy' : 'Available') + '</span>' +
+        '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function attachStylistsHandlers() {
+    var addBtn = document.getElementById('add-stylist-btn') || document.getElementById('add-stylist-empty-btn');
+    if (addBtn) addBtn.addEventListener('click', function () {
+      state.modal = { type: 'stylist', error: '', saving: false };
+      render();
+    });
+  }
+
+  function submitStylistModal() {
+    var m = state.modal;
+    var name = document.getElementById('stylist-name').value.trim();
+    var phone = document.getElementById('stylist-phone').value.trim();
+
+    if (!name) { m.error = 'Name is required.'; render(); return; }
+
+    m.saving = true; m.error = '';
+    render();
+
+    apiFetch('/api/v1/stylists?client_id=' + state.claims.client_id, {
+      method: 'POST',
+      body: JSON.stringify({ name: name, phone: phone }),
+    }).then(function () {
+      showToast('Stylist added.', 'success');
+      state.modal = null;
+      render();
+      loadStylists();
+    }).catch(function (err) {
+      m.saving = false; m.error = err.message;
+      render();
+    });
   }
 
   function renderStaffPage() {
@@ -1384,7 +1384,7 @@
     if (m.type === 'service') return renderServiceModal(m);
     if (m.type === 'slots') return renderSlotsModalHtml(m);
     if (m.type === 'staff') return renderStaffModalHtml(m);
-    if (m.type === 'autoSchedule') return renderAutoScheduleModalHtml(m);
+    if (m.type === 'stylist') return renderStylistModalHtml(m);
     return '';
   }
 
@@ -1445,45 +1445,6 @@
     '</div>';
   }
 
-  function renderAutoScheduleModalHtml(m) {
-    var dayLabels = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
-    var noun = m.isTableMode ? 'Table' : 'Staff';
-    var daysHtml = Object.keys(dayLabels).map(function (d) {
-      var checked = m.open_days.indexOf(d) !== -1 ? 'checked' : '';
-      return '<label style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--text-soft)">' +
-        '<input type="checkbox" class="auto-day-check" value="' + d + '" ' + checked + ' style="width:16px;height:16px" />' +
-        dayLabels[d] +
-      '</label>';
-    }).join('');
-
-    return '<div class="modal-overlay" id="modal-overlay">' +
-      '<div class="modal-box">' +
-        '<div class="modal-title">Auto Schedule</div>' +
-        '<div class="modal-sub">Set your weekly hours once — slots refill automatically every day, forever.</div>' +
-        (m.error ? '<div class="error-banner">' + escapeHtml(m.error) + '</div>' : '') +
-        '<label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13.5px;font-weight:600">' +
-          '<input type="checkbox" id="auto-enabled" ' + (m.enabled ? 'checked' : '') + ' style="width:16px;height:16px" /> Enabled' +
-        '</label>' +
-        '<div class="form-row"><label class="field-label">Open Days</label>' +
-          '<div style="display:flex;gap:8px;justify-content:space-between">' + daysHtml + '</div></div>' +
-        '<div class="form-row form-row-split">' +
-          '<div><label class="field-label">Open Time</label><input id="auto-open-time" class="field-input" style="margin:0" type="time" value="' + escapeHtml(m.open_time) + '" /></div>' +
-          '<div><label class="field-label">Close Time</label><input id="auto-close-time" class="field-input" style="margin:0" type="time" value="' + escapeHtml(m.close_time) + '" /></div>' +
-        '</div>' +
-        '<div class="form-row"><label class="field-label">Slot Duration (min)</label>' +
-          '<input id="auto-duration" class="field-input" style="margin:0" type="number" value="' + m.slot_duration_min + '" /></div>' +
-        '<div class="form-row"><label class="field-label">' + noun + ' Names (comma-separated, leave blank if solo)</label>' +
-          '<input id="auto-staff" class="field-input" style="margin:0" value="' + escapeHtml(m.staff) + '" placeholder="e.g. Rahul, Aradhya" /></div>' +
-        '<div class="modal-actions">' +
-          '<button class="btn-secondary" id="modal-cancel">Cancel</button>' +
-          '<button class="btn-primary" id="modal-submit" ' + (m.saving ? 'disabled' : '') + '>' +
-            (m.saving ? '<span class="spinner-sm"></span>' : 'Save Schedule') +
-          '</button>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-  }
-
   function renderStaffModalHtml(m) {
     var cfg = (state.dashboardConfig || {}).config || {};
     var singular = cfg.staff_label_singular || 'Staff Member';
@@ -1512,6 +1473,28 @@
     '</div>';
   }
 
+  function renderStylistModalHtml(m) {
+    return '<div class="modal-overlay" id="modal-overlay">' +
+      '<div class="modal-box">' +
+        '<div class="modal-title">Add Stylist</div>' +
+        '<div class="modal-sub">Their live availability will be shown to customers and tracked automatically</div>' +
+        (m.error ? '<div class="error-banner">' + escapeHtml(m.error) + '</div>' : '') +
+        '<div class="form-row"><label class="field-label">Name</label>' +
+          '<input id="stylist-name" class="field-input" style="margin:0" placeholder="e.g. Rahul" /></div>' +
+        '<div class="form-row"><label class="field-label">WhatsApp Number (optional)</label>' +
+          '<input id="stylist-phone" class="field-input" style="margin:0" placeholder="e.g. +919876543210" /></div>' +
+        '<div class="section-sub" style="margin-bottom:14px">If a number is added, they\'ll get a WhatsApp prompt ' +
+          '~5 minutes before each service ends, asking them to confirm completion.</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-secondary" id="modal-cancel">Cancel</button>' +
+          '<button class="btn-primary" id="modal-submit" ' + (m.saving ? 'disabled' : '') + '>' +
+            (m.saving ? '<span class="spinner-sm"></span>' : 'Add Stylist') +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   function attachModalHandlers() {
     var overlay = document.getElementById('modal-overlay');
     if (!overlay) return;
@@ -1528,7 +1511,7 @@
       if (state.modal.type === 'service') submitServiceModal();
       else if (state.modal.type === 'slots') submitSlotsModal();
       else if (state.modal.type === 'staff') submitStaffModal();
-      else if (state.modal.type === 'autoSchedule') submitAutoScheduleModal();
+      else if (state.modal.type === 'stylist') submitStylistModal();
     });
   }
 
