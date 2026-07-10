@@ -712,14 +712,17 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.5,
-                    "max_tokens" : 200,
+                    "temperature": 0.2,
+                    "max_tokens" : 1024,
                     "reasoning_effort": "none",  # Qwen3.6 thinks by default, wrapping output in <think> tags
                 },
             )
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
+            raw_text = re.sub(r'<think>.*', '', raw_text, flags=re.DOTALL).strip()
+            # Safety net in case reasoning_effort isn't fully respected by this model version
+            raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -727,8 +730,7 @@ Never invent prices or specific slot times — those are handled separately."""
             "intent"    : "error",
         }
 
-    # Safety net in case reasoning_effort isn't fully respected by this model version
-    raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
+    
 
     intent = "conversation"
     reply_text = raw_text
@@ -845,7 +847,7 @@ async def _initiate_booking(
 
     if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
         # Test mode — dummy link
-        slot_ref.update({"status": "pending_payment"})
+        slot_refs.update({"status": "pending_payment"})
         return {
             "success"     : True,
             "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
@@ -864,7 +866,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 900),
+            "expire_by"     : int(now.timestamp() + 1800),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
@@ -872,7 +874,7 @@ async def _initiate_booking(
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        slot_ref.update({"status": "available", "locked_at": None})
+        slot_refs.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
 
