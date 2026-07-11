@@ -50,13 +50,35 @@ def create_booking_session(
 ) -> dict:
     """
     WhatsApp bot ke andar se call hota hai jab customer
-    naam+number de deta hai. Session token generate karta hai
-    aur Firestore mein store karta hai.
+    naam+number de deta hai. Agar customer ka koi active (non-expired,
+    non-completed) session already exist karta hai, WAHI reuse karta hai —
+    taaki AI ke baar-baar want_booking trigger karne se naya link spam na ho.
+    Warna naya session token generate karta hai.
     """
     db = get_db()
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=SESSION_TTL_MINUTES)
 
+    existing = (
+        db.collection("booking_sessions")
+        .where(filter=FieldFilter("client_id", "==", client_id))
+        .where(filter=FieldFilter("customer_phone", "==", customer_phone))
+        .where(filter=FieldFilter("status", "==", "pending"))
+        .where(filter=FieldFilter("expires_at", ">", now))
+        .limit(1)
+        .get()
+    )
+    for doc in existing:
+        token = doc.id
+        app_base_url = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
+        logger.info("Reusing active booking session: client=%s customer=%s token=%s...",
+                    client_id, customer_phone, token[:8])
+        return {
+            "session_token": token,
+            "booking_url"  : f"{app_base_url}/book?session={token}",
+            "reused"       : True,
+        }
+
+    expires_at = now + timedelta(minutes=SESSION_TTL_MINUTES)
     token = secrets.token_urlsafe(24)
 
     session_data = {

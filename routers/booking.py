@@ -679,12 +679,18 @@ Communicate in Hinglish (Hindi-English mix). Keep replies SHORT (2-3 lines max).
 {name_context}
 
 YOUR ONLY JOB:
-1. Greet warmly and chat naturally about services/timing in general terms.
-2. Detect if the customer wants to BOOK an appointment (any sign of booking intent:
-   mentions a service, asks about availability, says "book karna hai", etc.)
-3. When booking intent is detected, output EXACTLY this marker at the end:
+1. Greet warmly and chat naturally about services/timing/pricing in general terms.
+2. Detect if the customer EXPLICITLY wants to book/schedule an appointment RIGHT NOW —
+   e.g. "book karna hai", "appointment chahiye", "kal 5 baje slot hai kya", "haircut book karo".
+   Do NOT treat these as booking intent: general questions ("kya services hain",
+   "price kya hai", "kitna time lagta hai"), greetings, small talk, or vague mentions
+   of a service without an actual booking request.
+3. ONLY when booking intent is unambiguous, output EXACTLY this marker at the end:
    INTENT:want_booking
-4. For general chat (greetings, questions about hours, etc.) do NOT output the marker.
+4. If the customer already has an active booking link (mentioned in conversation
+   history) and hasn't said they want a NEW/different booking, do NOT re-trigger
+   the marker — just answer their question normally.
+5. For everything else, do NOT output the marker.
 
 CONVERSATION HISTORY:
 {history_text}
@@ -712,17 +718,14 @@ Never invent prices or specific slot times — those are handled separately."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_message},
                     ],
-                    "temperature": 0.2,
-                    "max_tokens" : 1024,
+                    "temperature": 0.5,
+                    "max_tokens" : 200,
                     "reasoning_effort": "none",  # Qwen3.6 thinks by default, wrapping output in <think> tags
                 },
             )
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["choices"][0]["message"]["content"].strip()
-            raw_text = re.sub(r'<think>.*', '', raw_text, flags=re.DOTALL).strip()
-            # Safety net in case reasoning_effort isn't fully respected by this model version
-            raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
     except Exception as e:
         logger.error("Groq API error: %s", e)
         return {
@@ -730,7 +733,8 @@ Never invent prices or specific slot times — those are handled separately."""
             "intent"    : "error",
         }
 
-    
+    # Safety net in case reasoning_effort isn't fully respected by this model version
+    raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
 
     intent = "conversation"
     reply_text = raw_text
@@ -847,7 +851,7 @@ async def _initiate_booking(
 
     if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
         # Test mode — dummy link
-        slot_refs.update({"status": "pending_payment"})
+        slot_ref.update({"status": "pending_payment"})
         return {
             "success"     : True,
             "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
@@ -866,7 +870,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 1800),
+            "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
@@ -874,7 +878,7 @@ async def _initiate_booking(
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        slot_refs.update({"status": "available", "locked_at": None})
+        slot_ref.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
 
