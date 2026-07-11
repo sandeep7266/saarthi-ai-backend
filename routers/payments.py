@@ -853,7 +853,8 @@ async def _initiate_booking(
 
     if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
         # Test mode — dummy link
-        slot_ref.update({"status": "pending_payment"})
+        for ref in slot_refs:
+            ref.update({"status": "pending_payment"})
         return {
             "success"     : True,
             "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
@@ -880,7 +881,8 @@ async def _initiate_booking(
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        slot_ref.update({"status": "available", "locked_at": None})
+        for ref in slot_refs:
+            ref.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
 

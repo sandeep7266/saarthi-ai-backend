@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from typing import Optional
 
 import httpx
+from google.cloud.firestore import FieldFilter
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
@@ -202,15 +203,24 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
         bot_profile = dict(client_data.get("gemini_bot_profile", {}))
         bot_profile["business_type"] = client_data.get("business_type", bot_profile.get("business_type", "salon"))
 
-        # ── Cancel — works while waiting for name (only WhatsApp-side state) ────
-        # Once the customer moves to book.html, abandoning there is already
-        # handled by the 15-min stale-booking auto-expiry (utils/booking_expiry.py).
+        # ── Cancel — works anytime (WhatsApp-side state AND a locked pending booking) ──
         cancel_keywords = {"cancel", "cancel karo", "band karo", "ruk jao", "stop",
                            "roko", "nahi karna", "chodo", "chhod do", "exit", "quit"}
-        if msg_body.strip().lower() in cancel_keywords and _is_awaiting_name(client_id, from_number):
-            _clear_awaiting_name(client_id, from_number)
-            _send_whatsapp_text(phone_number_id, from_number,
-                "Theek hai, booking cancel kar diya. 🙏 Jab bhi chahein, dobara message kar dein.")
+        if msg_body.strip().lower() in cancel_keywords:
+            was_awaiting_name = _is_awaiting_name(client_id, from_number)
+            if was_awaiting_name:
+                _clear_awaiting_name(client_id, from_number)
+
+            released = _cancel_pending_booking_for_customer(client_id, from_number)
+
+            if released or was_awaiting_name:
+                _send_whatsapp_text(phone_number_id, from_number,
+                    "Theek hai, booking cancel kar diya aur slot free kar diya. 🙏 "
+                    "Jab bhi chahein, dobara message kar dein.")
+            else:
+                _send_whatsapp_text(phone_number_id, from_number,
+                    "Aapki koi active booking nahi mili cancel karne ke liye. "
+                    "Kuch aur chahiye toh bataiye 😊")
             return {"status": "ok"}
 
         # ── Gemini se sirf conversational reply + intent lo ────────────────
@@ -312,6 +322,57 @@ def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict
     }
     ref.set(profile)
     return profile
+
+
+def _cancel_pending_booking_for_customer(client_id: str, customer_phone: str) -> bool:
+    """
+    Finds the customer's most recent pending_payment booking (if any) and
+    releases it — same effect as the /booking-session/{token}/cancel endpoint,
+    but triggered from a WhatsApp "cancel"/"stop" message rather than the
+    book.html page. Returns True if something was actually cancelled/released.
+    """
+    db  = get_db()
+    now = datetime.now(timezone.utc)
+
+    bookings = (
+        db.collection(Collections.CLIENTS).document(client_id)
+        .collection(Collections.BOOKINGS)
+        .where(filter=FieldFilter("customer_phone", "==", customer_phone))
+        .where(filter=FieldFilter("status", "==", "pending_payment"))
+        .get()
+    )
+
+    released_any = False
+    for booking_doc in bookings:
+        booking_data = booking_doc.to_dict()
+        slot_ids = booking_data.get("slot_ids") or [booking_data.get("slot_id")]
+        slot_ids = [sid for sid in slot_ids if sid]
+
+        batch = db.batch()
+        batch.update(booking_doc.reference, {
+            "status"      : "cancelled",
+            "cancelled_at": now,
+            "cancelled_by": "customer_whatsapp",
+        })
+        for slot_id in slot_ids:
+            slot_ref = (
+                db.collection(Collections.CLIENTS).document(client_id)
+                .collection(Collections.SLOTS).document(slot_id)
+            )
+            slot_doc = slot_ref.get()
+            if slot_doc.exists and slot_doc.to_dict().get("status") == "pending_payment":
+                batch.update(slot_ref, {
+                    "status"     : "available",
+                    "booking_id" : None,
+                    "locked_at"  : None,
+                    "updated_at" : now,
+                })
+        batch.commit()
+        released_any = True
+        logger.info("WhatsApp cancel released booking %s (slots=%s) for client=%s",
+                    booking_doc.id, slot_ids, client_id)
+
+    return released_any
 
 
 def _set_marketing_opt_out(client_id: str, customer_phone: str) -> None:
@@ -872,7 +933,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 900),
+            "expire_by"     : int(now.timestamp() + 1800),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
