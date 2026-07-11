@@ -421,19 +421,24 @@
 
   // ── Step 1: Slot selection ───────────────────────────────────────────────
 
+  function istDateKey(iso) {
+    // en-CA gives YYYY-MM-DD — stable sortable string, computed in IST regardless of device timezone.
+    return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  }
   function fmtDay(dateKey) {
-    var d = new Date(dateKey);
-    var today = new Date();
-    var tomorrow = new Date(); tomorrow.setDate(today.getDate() + 1);
-    if (d.toDateString() === today.toDateString()) return 'Today';
-    if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-    return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    var d = new Date(dateKey + 'T00:00:00');
+    var todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    var tmrw = new Date(); tmrw.setDate(tmrw.getDate() + 1);
+    var tomorrowKey = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (dateKey === todayKey) return 'Today';
+    if (dateKey === tomorrowKey) return 'Tomorrow';
+    return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
   }
   function fmtTime(iso) {
-    return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
   }
   function fmtDateTime(iso) {
-    return new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    return new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
   }
 
   function renderSlotStep() {
@@ -485,7 +490,7 @@
       '</div>';
     }
 
-    var grouped = groupBy(state.slotGroups, function (g) { return new Date(g.start_datetime).toDateString(); });
+    var grouped = groupBy(state.slotGroups, function (g) { return istDateKey(g.start_datetime); });
     var dayKeys = Object.keys(grouped);
     if (!state.activeDay || !grouped[state.activeDay]) state.activeDay = dayKeys[0];
 

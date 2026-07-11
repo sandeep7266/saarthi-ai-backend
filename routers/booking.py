@@ -16,6 +16,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import httpx
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/api/v1/webhook", tags=["WhatsApp Booking"])
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "saarthi_verify_token")
 META_ACCESS_TOKEN     = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION      = os.getenv("META_API_VERSION", "v19.0")
+IST = ZoneInfo("Asia/Kolkata")
 GROQ_API_KEY          = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL            = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
 # llama-3.3-70b-versatile is being shut down by Groq on 08/16/26 — switched to
@@ -422,7 +424,7 @@ def _list_available_slots_for_reschedule(client_id: str) -> list[dict]:
     for doc in docs:
         data = doc.to_dict()
         dt = data.get("slot_datetime")
-        label = dt.strftime("%a %d %b, %I:%M %p") if hasattr(dt, "strftime") else str(dt)
+        label = dt.astimezone(IST).strftime("%a %d %b, %I:%M %p") if hasattr(dt, "strftime") else str(dt)
         staff = data.get("staff_name", "")
         slots.append({
             "slot_id": doc.id,
@@ -523,7 +525,7 @@ async def _reschedule_booking(client_id: str, booking_id: str, new_slot_id: str)
         logger.error("Reschedule transaction failed: %s", e)
         return {"success": False, "reason": "error"}
 
-    time_label = new_dt.strftime("%a %d %b, %I:%M %p") if hasattr(new_dt, "strftime") else str(new_dt)
+    time_label = new_dt.astimezone(IST).strftime("%a %d %b, %I:%M %p") if hasattr(new_dt, "strftime") else str(new_dt)
     return {"success": True, "new_time_label": time_label}
 
 
@@ -851,7 +853,7 @@ async def _initiate_booking(
 
     if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
         # Test mode — dummy link
-        slot_refs.update({"status": "pending_payment"})
+        slot_ref.update({"status": "pending_payment"})
         return {
             "success"     : True,
             "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
@@ -870,7 +872,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 1800),
+            "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
@@ -878,7 +880,7 @@ async def _initiate_booking(
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        slot_refs.update({"status": "available", "locked_at": None})
+        slot_ref.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
 

@@ -10,6 +10,7 @@ the window, without needing a separate "already sent" scan every time.
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from google.cloud.firestore import FieldFilter
@@ -22,6 +23,7 @@ META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN", "")
 META_API_VERSION  = os.getenv("META_API_VERSION", "v19.0")
 
 REMINDER_WINDOW_HOURS = 3  # send reminder ~3 hours before the appointment
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def send_upcoming_booking_reminders() -> dict:
@@ -73,7 +75,7 @@ def send_upcoming_booking_reminders() -> dict:
                     continue
 
                 slot_dt    = booking_data.get("slot_datetime")
-                time_label = slot_dt.strftime("%d %b, %I:%M %p") if hasattr(slot_dt, "strftime") else str(slot_dt)
+                time_label = slot_dt.astimezone(IST).strftime("%d %b, %I:%M %p") if hasattr(slot_dt, "strftime") else str(slot_dt)
                 service_name = booking_data.get("service_name", "your appointment")
                 staff_name   = booking_data.get("staff_name", "")
 
