@@ -172,6 +172,79 @@ async def get_slots(
     return {"slots": slots, "count": len(slots)}
 
 
+# ── Recurring Schedule Template (auto slot generation) ─────────────────────────
+
+class ScheduleTemplateRequest(BaseModel):
+    enabled: bool
+    slot_duration_min: int = 30
+    open_time: str   # "HH:MM", 24h
+    close_time: str  # "HH:MM", 24h
+    open_days: list[str]  # subset of ["mon","tue","wed","thu","fri","sat","sun"]
+    staff: list[str] = []  # empty = no staff assignment (solo business)
+
+
+@router.get("/schedule-template")
+async def get_schedule_template(
+    client_id: str = Query(...),
+    current_user: dict = Depends(require_active_tenant),
+):
+    if current_user["client_id"] != client_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    db = get_db()
+    doc = db.collection(Collections.CLIENTS).document(client_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    return {"schedule_template": doc.to_dict().get("schedule_template")}
+
+
+@router.put("/schedule-template")
+async def save_schedule_template(
+    body: ScheduleTemplateRequest,
+    client_id: str = Query(...),
+    admin: dict = Depends(require_admin),
+):
+    """
+    Saves the client's recurring weekly schedule and immediately backfills
+    the next 14 days of slots. From then on, a daily cron job keeps the
+    rolling window full automatically — no manual slot creation needed.
+    """
+    if admin["client_id"] != client_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+    bad_days = set(body.open_days) - valid_days
+    if bad_days:
+        raise HTTPException(status_code=422, detail=f"Invalid open_days: {bad_days}")
+
+    try:
+        from utils.slot_generator import _parse_hhmm
+        _parse_hhmm(body.open_time)
+        _parse_hhmm(body.close_time)
+    except Exception:
+        raise HTTPException(status_code=422, detail="open_time/close_time must be HH:MM.")
+
+    db = get_db()
+    client_ref = db.collection(Collections.CLIENTS).document(client_id)
+    if not client_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    template = body.dict()
+    client_ref.update({"schedule_template": template})
+
+    created = 0
+    if body.enabled:
+        from utils.slot_generator import bootstrap_slots_for_client
+        created = bootstrap_slots_for_client(client_id)
+
+    return {
+        "success": True,
+        "schedule_template": template,
+        "slots_created": created,
+    }
+
+
 @router.post("/slots", status_code=201)
 async def create_slots(
     client_id   : str                  = Query(...),
@@ -313,6 +386,63 @@ async def get_analytics(
         "total_bookings"   : total_bookings,
         "daily_revenue"    : sorted(daily.values(), key=lambda x: x["date"]),
         "staff_performance": staff_list,
+    }
+
+
+@router.get("/analytics/staff/{staff_name}")
+async def get_staff_analytics(
+    staff_name  : str,
+    client_id   : str = Query(...),
+    period      : str = Query("week"),  # week | month | year
+    admin       : dict= Depends(require_admin),
+):
+    """Per-stylist drill-down: revenue, booking count, and full booking history."""
+    if admin["client_id"] != client_id:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    now = datetime.now(timezone.utc)
+    if period == "week":
+        start = now - timedelta(days=7)
+    elif period == "month":
+        start = now - timedelta(days=30)
+    elif period == "year":
+        start = now - timedelta(days=365)
+    else:
+        raise HTTPException(status_code=422, detail="period must be week, month, or year")
+
+    db   = get_db()
+    docs = (
+        db.collection(Collections.CLIENTS)
+        .document(client_id)
+        .collection(Collections.BOOKINGS)
+        .where("status", "==", "confirmed")
+        .where("staff_name", "==", staff_name)
+        .where("slot_datetime", ">=", start)
+        .order_by("slot_datetime", direction="DESCENDING")
+        .get()
+    )
+
+    bookings = []
+    total_revenue = 0
+    for doc in docs:
+        data = doc.to_dict()
+        price = int(data.get("service_price", 0))
+        total_revenue += price
+        slot_dt = data.get("slot_datetime")
+        bookings.append({
+            "booking_id"    : doc.id,
+            "slot_datetime" : slot_dt.isoformat() if hasattr(slot_dt, "isoformat") else str(slot_dt),
+            "service_name"  : data.get("service_name", ""),
+            "customer_phone": data.get("customer_phone", ""),
+            "price"         : price,
+        })
+
+    return {
+        "staff_name"    : staff_name,
+        "period"        : period,
+        "total_revenue" : total_revenue,
+        "total_bookings": len(bookings),
+        "bookings"      : bookings,
     }
 
 
