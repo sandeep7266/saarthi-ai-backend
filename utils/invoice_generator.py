@@ -8,6 +8,7 @@ import io
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import cloudinary
 import cloudinary.uploader
@@ -32,6 +33,7 @@ cloudinary.config(
 
 # ── Brand colors ──────────────────────────────────────────────────────────────
 BRAND_PURPLE = colors.HexColor("#7C3AED")
+IST = ZoneInfo("Asia/Kolkata")
 BRAND_DARK   = colors.HexColor("#1E1B4B")
 LIGHT_GRAY   = colors.HexColor("#F8F7FF")
 MID_GRAY     = colors.HexColor("#E5E7EB")
@@ -251,8 +253,8 @@ def _build_booking_pdf(
     deposit_amount = booking.get("deposit_amount", 0)
     balance_due    = service_price - deposit_amount
     slot_dt        = booking.get("slot_datetime", "")
-    if hasattr(slot_dt, "strftime"):
-        slot_dt = slot_dt.strftime("%d %b %Y, %I:%M %p")
+    if hasattr(slot_dt, "astimezone"):
+        slot_dt = slot_dt.astimezone(IST).strftime("%d %b %Y, %I:%M %p")
 
     items_data = [
         [Paragraph("Description", hdr_s),
