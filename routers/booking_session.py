@@ -58,25 +58,31 @@ def create_booking_session(
     db = get_db()
     now = datetime.now(timezone.utc)
 
-    existing = (
-        db.collection("booking_sessions")
-        .where(filter=FieldFilter("client_id", "==", client_id))
-        .where(filter=FieldFilter("customer_phone", "==", customer_phone))
-        .where(filter=FieldFilter("status", "==", "pending"))
-        .where(filter=FieldFilter("expires_at", ">", now))
-        .limit(1)
-        .get()
-    )
-    for doc in existing:
-        token = doc.id
-        app_base_url = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
-        logger.info("Reusing active booking session: client=%s customer=%s token=%s...",
-                    client_id, customer_phone, token[:8])
-        return {
-            "session_token": token,
-            "booking_url"  : f"{app_base_url}/book?session={token}",
-            "reused"       : True,
-        }
+    try:
+        existing = (
+            db.collection("booking_sessions")
+            .where(filter=FieldFilter("client_id", "==", client_id))
+            .where(filter=FieldFilter("customer_phone", "==", customer_phone))
+            .where(filter=FieldFilter("status", "==", "pending"))
+            .where(filter=FieldFilter("expires_at", ">", now))
+            .limit(1)
+            .get()
+        )
+        for doc in existing:
+            token = doc.id
+            app_base_url = os.getenv("APP_BASE_URL", "https://saarthi-ai.in")
+            logger.info("Reusing active booking session: client=%s customer=%s token=%s...",
+                        client_id, customer_phone, token[:8])
+            return {
+                "session_token": token,
+                "booking_url"  : f"{app_base_url}/book?session={token}",
+                "reused"       : True,
+            }
+    except Exception as e:
+        # If the composite index for this query isn't created yet (or any other
+        # transient Firestore error), don't let it break link generation —
+        # just fall through and create a fresh session instead.
+        logger.error("Session reuse lookup failed (falling back to new session): %s", e)
 
     expires_at = now + timedelta(minutes=SESSION_TTL_MINUTES)
     token = secrets.token_urlsafe(24)
@@ -200,10 +206,6 @@ async def get_slots_for_services(session_token: str, service_ids: str = Query(..
     fixed 30-min-grid slots ko CONSECUTIVE runs mein group karta hai (same
     staff, back-to-back) taaki total duration cover ho sake.
 
-    Bhi return karta hai: har busy stylist ka live waiting_time_minutes
-    (agar stylist registered hai clients/{id}/stylists mein), aur agar
-    koi bhi valid consecutive-run nahi milta, ek suggested_next_slot.
-
     service_ids: comma-separated service_id list, e.g. "svc1,svc2"
     """
     db = get_db()
@@ -214,96 +216,40 @@ async def get_slots_for_services(session_token: str, service_ids: str = Query(..
 
     session   = session_doc.to_dict()
     client_id = session["client_id"]
-    now       = datetime.now(timezone.utc)
 
     ids = [s.strip() for s in service_ids.split(",") if s.strip()]
     if not ids:
         raise HTTPException(status_code=422, detail="At least one service_id required.")
 
-    services_ref = db.collection(Collections.CLIENTS).document(client_id).collection(Collections.SERVICES)
-    total_duration = 0
-    service_names  = []
-    for sid in ids:
-        doc = services_ref.document(sid).get()
-        if not doc.exists:
-            raise HTTPException(status_code=404, detail=f"Service not found: {sid}")
-        data = doc.to_dict()
-        total_duration += int(data.get("duration_min", 30))
-        service_names.append(data.get("name", ""))
-
-    total_block_min = total_duration + BUFFER_MINUTES
-
-    slot_end = now + timedelta(days=14)
-    slot_docs = (
-        db.collection(Collections.CLIENTS).document(client_id)
-        .collection(Collections.SLOTS)
-        .where(filter=FieldFilter("status", "==", "available"))
-        .where(filter=FieldFilter("slot_datetime", ">=", now))
-        .where(filter=FieldFilter("slot_datetime", "<=", slot_end))
-        .order_by("slot_datetime")
-        .limit(500)
-        .get()
-    )
-
-    by_staff: dict[str, list[dict]] = {}
-    for d in slot_docs:
-        data = d.to_dict()
-        staff = data.get("staff_name", "") or "_no_staff_"
-        by_staff.setdefault(staff, []).append({
-            "slot_id"      : d.id,
-            "slot_datetime": data.get("slot_datetime"),
-            "duration_min" : data.get("duration_min", 30),
-            "staff_name"   : data.get("staff_name", ""),
-        })
-
-    groups = []
-    for staff, slots in by_staff.items():
-        slots.sort(key=lambda s: s["slot_datetime"])
-        i = 0
-        while i < len(slots):
-            run = [slots[i]]
-            run_minutes = run[0]["duration_min"]
-            j = i + 1
-            while run_minutes < total_block_min and j < len(slots):
-                prev_end = run[-1]["slot_datetime"] + timedelta(minutes=run[-1]["duration_min"])
-                if slots[j]["slot_datetime"] == prev_end:
-                    run.append(slots[j])
-                    run_minutes += slots[j]["duration_min"]
-                    j += 1
-                else:
-                    break
-            if run_minutes >= total_block_min:
-                groups.append({
-                    "staff_name"    : staff if staff != "_no_staff_" else "",
-                    "start_datetime": run[0]["slot_datetime"].isoformat(),
-                    "end_datetime"  : (run[0]["slot_datetime"] + timedelta(minutes=total_block_min)).isoformat(),
-                    "slot_ids"      : [s["slot_id"] for s in run],
-                })
-            i += 1  # slide by one grid-slot so every possible start is considered
-
-    groups.sort(key=lambda g: g["start_datetime"])
-
-    # ── Live stylist waiting-time (only for stylists who are formally registered) ──
-    stylist_docs = db.collection(Collections.CLIENTS).document(client_id).collection(Collections.STYLISTS).get()
-    stylist_status = []
-    for d in stylist_docs:
-        data = d.to_dict()
-        entry = {"name": data.get("name", ""), "status": data.get("status", "available")}
-        if data.get("status") == "busy" and data.get("busy_until"):
-            entry["waiting_time_minutes"] = max(0, int((data["busy_until"] - now).total_seconds() // 60))
-        else:
-            entry["waiting_time_minutes"] = 0
-        stylist_status.append(entry)
-
-    suggested_next = groups[0] if groups else None
+    from utils.slot_grouping import compute_slot_groups
+    try:
+        result = compute_slot_groups(client_id, ids)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     return {
-        "total_duration_min": total_duration,
-        "buffer_min"        : BUFFER_MINUTES,
-        "service_names"     : service_names,
-        "slot_groups"       : groups[:20],
-        "stylist_status"    : stylist_status,
-        "suggested_next_slot": suggested_next,
+        "total_duration_min" : result["total_duration_min"],
+        "buffer_min"          : result["buffer_min"],
+        "service_names"       : result["service_names"],
+        "slot_groups"         : [
+            {
+                "staff_name"    : g["staff_name"],
+                "start_datetime": g["start_datetime"].isoformat(),
+                "end_datetime"  : g["end_datetime"].isoformat(),
+                "slot_ids"      : g["slot_ids"],
+            }
+            for g in result["slot_groups"]
+        ],
+        "stylist_status"      : result["stylist_status"],
+        "suggested_next_slot" : (
+            {
+                "staff_name"    : result["suggested_next_slot"]["staff_name"],
+                "start_datetime": result["suggested_next_slot"]["start_datetime"].isoformat(),
+                "end_datetime"  : result["suggested_next_slot"]["end_datetime"].isoformat(),
+                "slot_ids"      : result["suggested_next_slot"]["slot_ids"],
+            }
+            if result["suggested_next_slot"] else None
+        ),
     }
 
 

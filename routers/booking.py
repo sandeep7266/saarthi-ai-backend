@@ -194,7 +194,82 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
             _send_reschedule_slot_list(phone_number_id, from_number, slots)
             return {"status": "ok"}
 
-        # ── Conversation history ────────────────────────────────────────────
+        # ── WhatsApp-native booking flow: service → stylist → time → pay ───────
+        booking_flow = customer_profile.get("booking_flow") or {}
+        flow_step    = booking_flow.get("step", "")
+
+        if interactive_id == "bkf_cancel_flow":
+            _clear_booking_flow(client_id, from_number)
+            _send_whatsapp_text(phone_number_id, from_number, "Theek hai, booking process cancel kar diya. 🙏")
+            return {"status": "ok"}
+
+        if flow_step == "services" and interactive_id.startswith("svc:"):
+            service_id = interactive_id[4:]
+            service_ids = list(dict.fromkeys(booking_flow.get("service_ids", []) + [service_id]))  # de-dup, keep order
+            _set_booking_flow(client_id, from_number, {"step": "services", "service_ids": service_ids})
+            cart_names = _service_names_for_ids(client_id, service_ids)
+            _send_whatsapp_buttons(
+                phone_number_id, from_number,
+                f"Cart mein abhi: {', '.join(cart_names)}\n\nAur service add karni hai, ya aage badhein?",
+                [
+                    {"id": "bkf_add_more", "title": "➕ Add Service"},
+                    {"id": "bkf_done",     "title": "✅ Continue"},
+                    {"id": "bkf_cancel_flow", "title": "❌ Cancel"},
+                ],
+            )
+            return {"status": "ok"}
+
+        if interactive_id == "bkf_add_more":
+            _send_service_list(phone_number_id, client_id, from_number)
+            return {"status": "ok"}
+
+        if interactive_id == "bkf_done":
+            service_ids = booking_flow.get("service_ids", [])
+            if not service_ids:
+                _send_whatsapp_text(phone_number_id, from_number, "Pehle kam se kam ek service choose karein 🙏")
+                _send_service_list(phone_number_id, client_id, from_number)
+                return {"status": "ok"}
+            _send_stylist_list(phone_number_id, client_id, from_number, service_ids)
+            return {"status": "ok"}
+
+        if flow_step == "stylist" and interactive_id.startswith("stylist:"):
+            stylist_name = "" if interactive_id == "stylist:any" else interactive_id[8:]
+            ok = _send_time_list(phone_number_id, client_id, from_number, booking_flow.get("service_ids", []), stylist_name)
+            if not ok:
+                _send_whatsapp_text(phone_number_id, from_number,
+                    "Is combo ke liye agle 2 hafton mein koi slot nahi mila. 'Cancel' bhej ke dobara try karein 🙏")
+                _clear_booking_flow(client_id, from_number)
+            return {"status": "ok"}
+
+        if flow_step == "time" and interactive_id.startswith("time:"):
+            idx_str = interactive_id[5:]
+            groups = booking_flow.get("slot_groups", [])
+            try:
+                idx = int(idx_str)
+                group = groups[idx]
+            except (ValueError, IndexError):
+                _send_whatsapp_text(phone_number_id, from_number, "Ye option ab valid nahi hai, dobara try karein 🙏")
+                _clear_booking_flow(client_id, from_number)
+                return {"status": "ok"}
+
+            result = await _finalize_whatsapp_booking(
+                phone_number_id, client_id, client_data, from_number,
+                booking_flow.get("service_ids", []), group
+            )
+            _clear_booking_flow(client_id, from_number)
+            if result.get("success"):
+                _send_whatsapp_text(
+                    phone_number_id, from_number,
+                    f"🎉 Almost done! Deposit pay karke booking confirm karein:\n\n"
+                    f"👉 {result['payment_link']}\n\n"
+                    f"Slot 15 minute ke liye hold hai. 🙏"
+                )
+            else:
+                _send_whatsapp_text(phone_number_id, from_number,
+                    "Ye time ab available nahi hai. 'reschedule' ya kuch bhi message karke dobara try karein 🙏")
+            return {"status": "ok"}
+
+
         conversation_history = _get_conversation_history(client_id, from_number)
 
         # business_type top-level client field se lo (always reliable) —
@@ -244,13 +319,12 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
                 )
                 _set_awaiting_name(client_id, from_number)
             else:
-                # Naam pata hai — seedha booking link bhej do
-                ai_text = _generate_booking_link_message(
-                    client_id=client_id,
-                    customer_phone=from_number,
-                    customer_name=customer_profile["name"],
-                    business_name=client_data.get("business_name", ""),
-                )
+                # Naam pata hai — seedha WhatsApp par service list bhejo
+                _store_conversation_turn(client_id, from_number, msg_body, ai_text)
+                if ai_text:
+                    _send_whatsapp_text(phone_number_id, from_number, ai_text)
+                _send_service_list(phone_number_id, client_id, from_number)
+                return {"status": "ok"}
 
         # ── Intent: naam de raha hai (awaiting_name state mein) ────────────
         elif _is_awaiting_name(client_id, from_number):
@@ -258,12 +332,9 @@ async def whatsapp_incoming(request: Request, background_tasks: BackgroundTasks)
             if extracted_name:
                 _save_customer_name(client_id, from_number, extracted_name)
                 _clear_awaiting_name(client_id, from_number)
-                ai_text = _generate_booking_link_message(
-                    client_id=client_id,
-                    customer_phone=from_number,
-                    customer_name=extracted_name,
-                    business_name=client_data.get("business_name", ""),
-                )
+                _store_conversation_turn(client_id, from_number, msg_body, ai_text)
+                _send_service_list(phone_number_id, client_id, from_number)
+                return {"status": "ok"}
             else:
                 ai_text = "Maafi chahti hoon, aapka naam samajh nahi paayi. Phir se bata dein? 🙏"
 
@@ -318,6 +389,7 @@ def _get_or_create_customer_profile(client_id: str, customer_phone: str) -> dict
         "awaiting_name"   : False,
         "marketing_opt_in": False,  # explicit opt-in required before any marketing send
         "pending_reschedule_booking_id": "",
+        "booking_flow"    : {},
         "created_at"      : datetime.now(timezone.utc),
     }
     ref.set(profile)
@@ -384,6 +456,166 @@ def _set_marketing_opt_out(client_id: str, customer_phone: str) -> None:
         .document(customer_phone)
     )
     ref.update({"marketing_opt_in": False, "marketing_opt_out_at": datetime.now(timezone.utc)})
+
+
+# ── WhatsApp-native booking flow: service → stylist → time → pay ──────────────
+
+def _customer_ref(client_id: str, customer_phone: str):
+    db = get_db()
+    return (
+        db.collection(Collections.CLIENTS).document(client_id)
+        .collection("customers").document(customer_phone)
+    )
+
+
+def _set_booking_flow(client_id: str, customer_phone: str, flow: dict) -> None:
+    _customer_ref(client_id, customer_phone).update({"booking_flow": flow})
+
+
+def _clear_booking_flow(client_id: str, customer_phone: str) -> None:
+    _customer_ref(client_id, customer_phone).update({"booking_flow": {}})
+
+
+def _service_names_for_ids(client_id: str, service_ids: list[str]) -> list[str]:
+    db = get_db()
+    services_ref = db.collection(Collections.CLIENTS).document(client_id).collection(Collections.SERVICES)
+    names = []
+    for sid in service_ids:
+        doc = services_ref.document(sid).get()
+        if doc.exists:
+            names.append(doc.to_dict().get("name", sid))
+    return names
+
+
+def _send_service_list(phone_number_id: str, client_id: str, customer_phone: str) -> None:
+    db = get_db()
+    docs = (
+        db.collection(Collections.CLIENTS).document(client_id)
+        .collection(Collections.SERVICES)
+        .limit(10)
+        .get()
+    )
+    rows = []
+    for doc in docs:
+        data = doc.to_dict()
+        price = int(data.get("price", 0))
+        duration = int(data.get("duration_min", 30))
+        rows.append({
+            "id"         : f"svc:{doc.id}",
+            "title"      : data.get("name", "Service"),
+            "description": f"₹{price} · {duration} min",
+        })
+
+    if not rows:
+        _send_whatsapp_text(phone_number_id, customer_phone,
+            "Maafi chahti hoon, abhi koi service list nahi hai. Support se contact karein 🙏")
+        return
+
+    _set_booking_flow(client_id, customer_phone, {"step": "services", "service_ids": []})
+    _send_whatsapp_list(
+        phone_number_id, customer_phone,
+        "Choose a Service", "Kya book karna chahenge?", "View Services", rows
+    )
+
+
+def _send_stylist_list(phone_number_id: str, client_id: str, customer_phone: str, service_ids: list[str]) -> None:
+    db = get_db()
+    stylist_docs = list(
+        db.collection(Collections.CLIENTS).document(client_id).collection(Collections.STYLISTS).limit(9).get()
+    )
+
+    if not stylist_docs:
+        # No stylists registered — skip straight to time selection (any staff).
+        ok = _send_time_list(phone_number_id, client_id, customer_phone, service_ids, "")
+        if not ok:
+            _send_whatsapp_text(phone_number_id, customer_phone,
+                "Agle 2 hafton mein koi slot nahi mila. Thodi der mein try karein 🙏")
+            _clear_booking_flow(client_id, customer_phone)
+        return
+
+    rows = [{"id": "stylist:any", "title": "✨ Any Stylist", "description": "Fastest available"}]
+    for doc in stylist_docs:
+        data = doc.to_dict()
+        status = "🟢 Free now" if data.get("status") != "busy" else "🟠 Busy"
+        rows.append({"id": f"stylist:{data.get('name','')}", "title": data.get("name", ""), "description": status})
+
+    _set_booking_flow(client_id, customer_phone, {"step": "stylist", "service_ids": service_ids})
+    _send_whatsapp_list(
+        phone_number_id, customer_phone,
+        "Choose a Stylist", "Kisse book karna chahenge?", "View Stylists", rows
+    )
+
+
+def _send_time_list(phone_number_id: str, client_id: str, customer_phone: str,
+                     service_ids: list[str], stylist_name: str) -> bool:
+    """Returns False if no slots were found at all (caller handles the message)."""
+    from utils.slot_grouping import compute_slot_groups
+    try:
+        result = compute_slot_groups(client_id, service_ids, staff_filter=stylist_name)
+    except ValueError:
+        return False
+
+    groups = result["slot_groups"]
+    if not groups:
+        return False
+
+    IST = ZoneInfo("Asia/Kolkata")
+    rows = []
+    stored_groups = []
+    for i, g in enumerate(groups[:10]):
+        label = g["start_datetime"].astimezone(IST).strftime("%a %d %b, %I:%M %p")
+        desc = g["staff_name"] if g["staff_name"] else "Any available stylist"
+        rows.append({"id": f"time:{i}", "title": label, "description": desc})
+        stored_groups.append({
+            "staff_name"    : g["staff_name"],
+            "start_datetime": g["start_datetime"].isoformat(),
+            "slot_ids"      : g["slot_ids"],
+        })
+
+    _set_booking_flow(client_id, customer_phone, {
+        "step": "time", "service_ids": service_ids, "slot_groups": stored_groups,
+    })
+    _send_whatsapp_list(
+        phone_number_id, customer_phone,
+        "Choose a Time", f"{result['total_duration_min']} min ka booking — available times:",
+        "View Times", rows
+    )
+    return True
+
+
+async def _finalize_whatsapp_booking(
+    phone_number_id: str, client_id: str, client_data: dict, customer_phone: str,
+    service_ids: list[str], group: dict,
+) -> dict:
+    db = get_db()
+    services_ref = db.collection(Collections.CLIENTS).document(client_id).collection(Collections.SERVICES)
+    services_info = []
+    for sid in service_ids:
+        doc = services_ref.document(sid).get()
+        if doc.exists:
+            data = doc.to_dict()
+            services_info.append({
+                "service_id"  : sid,
+                "name"        : data.get("name", ""),
+                "price"       : data.get("price", 0),
+                "duration_min": data.get("duration_min", 30),
+            })
+
+    slot_ids = group.get("slot_ids", [])
+    slot_info = {
+        "id"           : slot_ids[0],
+        "slot_datetime": datetime.fromisoformat(group["start_datetime"]),
+        "staff_name"   : group.get("staff_name", ""),
+    }
+
+    return await _initiate_booking(
+        client_id=client_id,
+        client_data=client_data,
+        customer_phone=customer_phone,
+        slot_info=slot_info,
+        services_info=services_info,
+        extra_slot_ids=slot_ids[1:],
+    )
 
 
 def _set_pending_reschedule(client_id: str, customer_phone: str, booking_id: str) -> None:
@@ -914,6 +1146,7 @@ async def _initiate_booking(
 
     if not RAZORPAY_KEY_ID or RAZORPAY_KEY_ID == "dummy":
         # Test mode — dummy link
+        slot_ref.update({"status": "pending_payment"})
         return {
             "success"     : True,
             "payment_link": f"{APP_BASE_URL}/pay-test/{booking_id}",
@@ -932,7 +1165,7 @@ async def _initiate_booking(
             "customer"      : {"contact": customer_phone},
             "notify"        : {"sms": False, "email": False, "whatsapp": False},
             "reminder_enable": False,
-            "expire_by"     : int(now.timestamp() + 1800),
+            "expire_by"     : int(now.timestamp() + 900),
             "notes"         : {"booking_id": booking_id, "client_id": client_id},
             "callback_url"  : f"{APP_BASE_URL}/api/v1/webhook/booking-success",
             "callback_method": "get",
@@ -940,8 +1173,7 @@ async def _initiate_booking(
         return {"success": True, "payment_link": plink["short_url"], "booking_id": booking_id}
     except Exception as e:
         logger.error("Razorpay deposit link creation failed: %s", e)
-        for ref in slot_refs:
-            ref.update({"status": "available", "locked_at": None})
+        slot_ref.update({"status": "available", "locked_at": None})
         booking_ref.delete()
         return {"success": False, "reason": f"razorpay_error: {e}"}
 
@@ -966,6 +1198,70 @@ def _send_whatsapp_text(phone_number_id: str, to: str, message: str) -> None:
             resp.raise_for_status()
     except Exception as e:
         logger.error("WhatsApp send failed → %s: %s", to, e)
+
+
+def _send_whatsapp_buttons(phone_number_id: str, to: str, body_text: str, buttons: list[dict]) -> None:
+    """buttons: list of {"id","title"} — WhatsApp allows max 3 per message."""
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to"  : to,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": b["id"], "title": b["title"][:20]}}
+                    for b in buttons[:3]
+                ]
+            },
+        },
+    }
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("WhatsApp buttons send failed → %s: %s", to, e)
+
+
+def _send_whatsapp_list(phone_number_id: str, to: str, header: str, body_text: str,
+                         button_label: str, rows: list[dict]) -> None:
+    """rows: list of {"id","title","description"?} — WhatsApp allows max 10 rows."""
+    url = f"https://graph.facebook.com/{META_API_VERSION}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to"  : to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {"type": "text", "text": header[:60]},
+            "body": {"text": body_text},
+            "action": {
+                "button": button_label[:20],
+                "sections": [{
+                    "title": header[:24],
+                    "rows": [
+                        {
+                            "id": r["id"],
+                            "title": r["title"][:24],
+                            **({"description": r["description"][:72]} if r.get("description") else {}),
+                        }
+                        for r in rows[:10]
+                    ],
+                }],
+            },
+        },
+    }
+    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    try:
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("WhatsApp list send failed → %s: %s", to, e)
 
 
 # ── Payment Success Redirect Page (customer booking deposit) ───────────────────
